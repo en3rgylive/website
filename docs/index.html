@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EN3RGY | Rooftop solar</title>
+<meta name="description" content="Rooftop solar for homes and businesses. Follow one ray of sunlight from the sun to your roof, and watch your home come alive.">
+<link rel="canonical" href="https://en3rgy.live/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="EN3RGY">
+<meta property="og:title" content="EN3RGY | Rooftop solar">
+<meta property="og:description" content="Follow one ray of sunlight from the sun to your roof, and watch your home come alive.">
+<meta property="og:url" content="https://en3rgy.live/">
+<meta property="og:image" content="https://en3rgy.live/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#06070b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..600&family=Outfit:wght@200..500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="top" id="top">
+  <a class="logo" href="#film" aria-label="EN3RGY, back to top">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+      <circle cx="16" cy="16" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M16 3v4M16 25v4M3 16h4M25 16h4M6.8 6.8l2.8 2.8M22.4 22.4l2.8 2.8M25.2 6.8l-2.8 2.8M9.6 22.4l-2.8 2.8"/></g>
+    </svg>
+    <span>EN3RGY</span>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a href="#installations">What we build</a>
+    <a href="#process">Process</a>
+    <a href="#estimate">Estimate</a>
+  </nav>
+  <a class="pill" href="#contact">Book a roof check</a>
+</header>
+
+<main>
+
+<!-- ============ THE FILM: sun -> ray -> panel -> house ============ -->
+<section id="film" class="film" aria-label="From the sun to your home">
+  <div class="film-stick">
+    <canvas id="stage" aria-hidden="true"></canvas>
+    <div class="flare" id="flare" aria-hidden="true"><i></i></div>
+
+    <div class="caps">
+      <div class="cap" data-i="0">
+        <p class="k">The star</p>
+        <h1>It begins 150 million kilometres away.</h1>
+        <p class="s">Every second, the sun turns four million tonnes of itself into light. One ray sets out for Earth.</p>
+      </div>
+      <div class="cap" data-i="1">
+        <p class="k">The journey</p>
+        <h2>Eight minutes later, it meets the atmosphere.</h2>
+        <p class="s">It breaks through the cloud. Even a heavy grey sky lets some of the light through.</p>
+      </div>
+      <div class="cap" data-i="2">
+        <p class="k">The roof</p>
+        <h2>And it lands on your roof.</h2>
+        <p class="s">Most roofs simply let it pass.</p>
+      </div>
+      <div class="cap" data-i="3">
+        <p class="k">The module</p>
+        <h2>Here, light becomes power.</h2>
+        <p class="s">Silicon cells turn each photon into current. Nothing moves, so there is little to wear out.</p>
+      </div>
+      <div class="cap" data-i="4">
+        <p class="k">The inverter</p>
+        <h2>The inverter makes it usable.</h2>
+        <p class="s">Direct current in. The 230 volt alternating current your home runs on, out.</p>
+      </div>
+      <div class="cap" data-i="5">
+        <p class="k">The whole house</p>
+        <h2>And the whole house wakes up.</h2>
+        <p class="s">Lights, fans, AC and the EV charger run on your own sun.</p>
+      </div>
+    </div>
+
+    <div class="film-load" id="filmLoad" aria-hidden="true"><i></i></div>
+    <div class="film-bar" aria-hidden="true"><i id="filmBar"></i></div>
+    <div class="counter" aria-hidden="true"><b id="cNum">01</b><span>/ 06</span><em id="cName">The star</em></div>
+    <div class="cue" id="cue" aria-hidden="true"><span>Scroll or swipe</span><i></i></div>
+    <a class="film-cta" id="filmCta" href="#contact">Book a free roof check</a>
+  </div>
+
+  <!-- plain list of the six chapters as stills, shown only if the footage cannot load -->
+  <div class="static" aria-hidden="false">
+    <figure><img src="plates/c6.webp" alt="The sun, with a ray of light leaving it" loading="lazy"><figcaption>It begins 150 million kilometres away.</figcaption></figure>
+    <figure><img src="plates/c8.webp" alt="The ray passing through cloud above a landscape" loading="lazy"><figcaption>Eight minutes later, it meets the atmosphere.</figcaption></figure>
+    <figure><img src="plates/c9.webp" alt="The ray landing on a rooftop solar panel" loading="lazy"><figcaption>And it lands on your roof.</figcaption></figure>
+    <figure><img src="plates/c1.webp" alt="A solar module opened to show glowing circuitry" loading="lazy"><figcaption>Here, light becomes power.</figcaption></figure>
+    <figure><img src="plates/c4.webp" alt="An inverter with golden lines of current" loading="lazy"><figcaption>The inverter makes it usable.</figcaption></figure>
+    <figure><img src="plates/c3.webp" alt="A home at sunset, powered, with an electric car charging" loading="lazy"><figcaption>And the whole house wakes up.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ AFTER THE FILM ============ -->
+<div class="after">
+
+  <section class="statement wrap" id="about">
+    <p class="eyebrow">EN3RGY · Rooftop solar</p>
+    <h2>We design rooftop solar in 3D, then build exactly what we drew.</h2>
+  </section>
+
+  <section class="installs wrap" id="installations">
+    <header class="head">
+      <p class="eyebrow">What we build</p>
+      <h2>From the roof to the switchboard</h2>
+    </header>
+    <div class="grid">
+      <figure class="shot a">
+        <div class="ph"><img src="plates/c9.webp" alt="A rooftop solar array receiving a ray of light on a stormy morning" loading="lazy" decoding="async"></div>
+        <figcaption><b>Rooftop array</b><span>Panels, rails and wiring, designed in 3D first</span></figcaption>
+      </figure>
+      <figure class="shot b">
+        <div class="ph"><img src="plates/c1.webp" alt="A solar module opened to show the circuitry beneath" loading="lazy" decoding="async"></div>
+        <figcaption><b>Module</b><span>Cells and busbars</span></figcaption>
+      </figure>
+      <figure class="shot c">
+        <div class="ph"><img src="plates/c4.webp" alt="An inverter with lines of current running to the floor" loading="lazy" decoding="async"></div>
+        <figcaption><b>Inverter</b><span>DC in, AC out</span></figcaption>
+      </figure>
+      <figure class="shot d">
+        <div class="ph"><img src="plates/c2.webp" alt="A stream of power entering a modern home entrance" loading="lazy" decoding="async"></div>
+        <figcaption><b>Distribution</b><span>Into the home</span></figcaption>
+      </figure>
+      <figure class="shot e">
+        <div class="ph"><img src="plates/c3.webp" alt="A powered home at dusk with every room lit and an EV charging" loading="lazy" decoding="async"></div>
+        <figcaption><b>Switched on</b><span>Home and EV</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="process wrap" id="process">
+    <header class="head">
+      <p class="eyebrow">Process</p>
+      <h2>From first call to first unit</h2>
+    </header>
+    <ol class="steps">
+      <li><span class="num" aria-hidden="true">1</span><h3>Roof check</h3><p>A surveyor visits, measures shade and roof, and sends a 3D design with a fixed quote.</p></li>
+      <li><span class="num" aria-hidden="true">2</span><h3>Installation</h3><p>Structure, panels, inverter and wiring, installed and tested before we leave.</p></li>
+      <li><span class="num" aria-hidden="true">3</span><h3>Switch on</h3><p>We file the subsidy and net-metering papers. Once approved, your meter starts running back.</p></li>
+    </ol>
+  </section>
+
+  <section class="estimate wrap" id="estimate">
+    <div class="est-copy">
+      <p class="eyebrow">Estimate</p>
+      <h2>What would solar do to your bill?</h2>
+      <div class="seg" role="group" aria-label="Building type">
+        <button type="button" data-kind="home" aria-pressed="true">Home</button>
+        <button type="button" data-kind="biz" aria-pressed="false">Business</button>
+      </div>
+      <div class="bill">
+        <label for="billRange">Monthly electricity bill</label>
+        <output id="eBill" for="billRange">₹3,000</output>
+        <input type="range" id="billRange" min="500" max="15000" step="100" value="3000">
+        <div class="ticks" id="billTicks" aria-hidden="true"></div>
+      </div>
+    </div>
+    <dl class="est-out">
+      <div><dt>Suggested system</dt><dd><span id="eKw">3.0</span> kW</dd></div>
+      <div><dt>You pay after subsidy</dt><dd id="eNet">₹1,07,000</dd></div>
+      <div><dt>You save each month</dt><dd id="eSave">₹2,750</dd></div>
+      <div><dt>Pays for itself in</dt><dd id="ePay">3.2 years</dd></div>
+      <p class="fine" id="eNote">Subsidy under PM Surya Ghar: ₹30,000 per kW up to 2 kW and ₹18,000 for the third kW, capped at ₹78,000. Assumes ₹8 a unit and 4 units per kW per day. Your survey gives exact numbers.</p>
+    </dl>
+  </section>
+
+  <section class="contact wrap" id="contact">
+    <h2>Book a free roof check.</h2>
+    <p class="lead">Tell us about your roof and we will get back to you.</p>
+    <form class="form" id="leadForm" novalidate>
+      <div class="field"><label for="fName">Name</label><input id="fName" name="name" autocomplete="name" placeholder="Your name" required></div>
+      <div class="field"><label for="fPhone">Mobile</label><input id="fPhone" name="phone" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile number" required></div>
+      <div class="field"><label for="fBill">Monthly bill (₹)</label><input id="fBill" name="bill" inputmode="numeric" placeholder="3000"></div>
+      <a class="pill pill-solid" id="waLink" href="mailto:en3rgylive@gmail.com" aria-disabled="true">Send enquiry</a>
+    </form>
+    <p class="fine" id="formNote">Add your name and a 10-digit mobile number. This opens an email to us with your details filled in.</p>
+    <ul class="reach">
+      <li><span>Email</span><b><a href="mailto:en3rgylive@gmail.com">en3rgylive@gmail.com</a></b></li>
+      <li><span>Website</span><b>en3rgy.live</b></li>
+    </ul>
+  </section>
+
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <span>© 2026 EN3RGY</span>
+      <span>Prices and savings are indicative. Subsidy rules are set by the government and can change.</span>
+    </div>
+  </footer>
+</div>
+
+</main>
+
+<script src="js/reel.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
