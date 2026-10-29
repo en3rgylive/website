@@ -79,7 +79,8 @@ def main():
     ap.add_argument('out', help='output folder, normally clips/')
     ap.add_argument('--cuts', default='', help='cut times in seconds for a single video, e.g. 2.5,4.67,7.0')
     ap.add_argument('--auto-cuts', nargs='?', const=0.22, type=float, default=None, help='find the cuts automatically (optional scene threshold, default 0.22)')
-    ap.add_argument('--grid', default='2x2', help='frames per sheet, columns x rows (default 2x2)')
+    ap.add_argument('--grid', default='2x2', help='frames per desktop sheet, columns x rows (default 2x2)')
+    ap.add_argument('--mgrid', default='', help='frames per phone sheet (default: same as --grid)')
     ap.add_argument('--fps', type=float, default=0, help='frames kept per second; 0 keeps every frame (default)')
     ap.add_argument('--dw', type=int, default=1280, help='desktop frame width (default 1280)')
     ap.add_argument('--mw', type=int, default=1024, help='phone frame width (default 1024)')
@@ -93,7 +94,8 @@ def main():
     a = ap.parse_args()
 
     cols, rows = [int(x) for x in a.grid.lower().split('x')]
-    per = cols * rows
+    mcols, mrows = [int(x) for x in (a.mgrid or a.grid).lower().split('x')]
+    per, mper = cols * rows, mcols * mrows
     hold = [float(x) for x in a.hold.split(',')]
 
     # 1. frames for every chapter
@@ -153,26 +155,26 @@ def main():
         mean = sum(durs) / K
         weights = [round((d / mean) ** a.weight_power, 3) for d in durs]
 
-        manifest = {'version': 2, 'ext': 'webp', 'fps': round(a.fps or src_fps or 24.0, 3), 'grid': {'cols': cols, 'rows': rows},
+        manifest = {'version': 2, 'ext': 'webp', 'fps': round(a.fps or src_fps or 24.0, 3), 'grid': {'cols': cols, 'rows': rows}, 'mgrid': {'cols': mcols, 'rows': mrows},
                     'd': {'w': dw, 'h': dh}, 'm': {'w': mw, 'h': mh}, 'clips': [], 'cuts': []}
         pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 2))
         total = {'d': 0, 'm': 0}
         for ci, frames in enumerate(chapters):
             cid = '%02d' % (ci + 1)
             n = len(frames)
-            units = math.ceil(n / per)
+            units, munits = math.ceil(n / per), math.ceil(n / mper)
             jobs = []
-            for sub, fw, fh, q in (('d', dw, dh, a.q), ('m', mw, mh, a.mq)):
+            for sub, fw, fh, q, g, gc, gr, nu in (('d', dw, dh, a.q, per, cols, rows, units), ('m', mw, mh, a.mq, mper, mcols, mrows, munits)):
                 d = os.path.join(a.out, sub, cid)
                 os.makedirs(d, exist_ok=True)
-                for u in range(units):
-                    jobs.append((frames[u * per:(u + 1) * per], os.path.join(d, '%04d.webp' % (u + 1)), fw, fh, cols, rows, q))
+                for u in range(nu):
+                    jobs.append((frames[u * g:(u + 1) * g], os.path.join(d, '%04d.webp' % (u + 1)), fw, fh, gc, gr, q))
             sizes = list(pool.map(build_sheet, jobs, chunksize=2))
             ds, ms = sum(sizes[:units]), sum(sizes[units:])
             total['d'] += ds; total['m'] += ms
-            manifest['clips'].append({'id': cid, 'n': n, 'units': units, 'dur': round(durs[ci], 3), 'w': weights[ci], 'hold': hold,
+            manifest['clips'].append({'id': cid, 'n': n, 'units': units, 'munits': munits, 'dur': round(durs[ci], 3), 'w': weights[ci], 'hold': hold,
                                       'seam': 0, 'flash': 0, 'kx': kx[ci], 'dir': 'd/%s/' % cid, 'mdir': 'm/%s/' % cid})
-            print('%s  %3d frames  %2d sheets  desktop %5.1f MB  phone %5.1f MB  (%.1fs, weight %.2f)' % (cid, n, units, ds / 1e6, ms / 1e6, durs[ci], weights[ci]))
+            print('%s  %3d frames  %2d+%2d sheets  desktop %5.1f MB  phone %5.1f MB  (%.1fs, weight %.2f)' % (cid, n, units, munits, ds / 1e6, ms / 1e6, durs[ci], weights[ci]))
         pool.shutdown()
 
         # how big is the jump from the last frame of one chapter to the first of the next; big jumps are hard cuts

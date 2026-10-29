@@ -28,8 +28,10 @@
   function start(M) {
     const ctx = cv.getContext('2d', { alpha: false });
     const clips = M.clips, K = clips.length;                 // K chapters
-    const cols = (M.grid && M.grid.cols) || 1, rows = (M.grid && M.grid.rows) || 1, per = cols * rows;
     const small = coarse || Math.min(screen.width || 1200, screen.height || 800) < 700;
+    const grid = (small && M.mgrid) || M.grid || { cols: 1, rows: 1 };      // frames per sheet: the phone set can use a different grid
+    const cols = grid.cols || 1, rows = grid.rows || 1, per = cols * rows;
+    const unitsOf = (c) => (small && c.munits) || c.units || Math.ceil(c.n / per);
     const EASE = reduce ? 0 : 0.35;                          // a little easing on the footage inside each chapter
     const PRE = 0.02, POST = 0.04;                           // scroll held on the very first and very last frame
 
@@ -42,7 +44,7 @@
     const uStart = [], uClip = [], uLocal = [];
     let nU = 0;
     clips.forEach((c, ci) => {
-      const units = c.units || Math.ceil(c.n / per);
+      const units = unitsOf(c);
       uStart.push(nU);
       for (let u = 0; u < units; u++) { uClip.push(ci); uLocal.push(u); }
       nU += units;
@@ -52,7 +54,7 @@
       const c = clips[uClip[g]];
       return base + (small ? (c.mdir || c.dir) : c.dir) + String(uLocal[g] + 1).padStart(4, '0') + '.' + (M.ext || 'webp');
     };
-    const isKey = (g) => uLocal[g] === 0 || g === uStart[uClip[g]] + (clips[uClip[g]].units || Math.ceil(clips[uClip[g]].n / per)) - 1;
+    const isKey = (g) => uLocal[g] === 0 || g === uStart[uClip[g]] + unitsOf(clips[uClip[g]]) - 1;
     const coarseList = [];
     for (let g = 0; g < nU; g++) if (isKey(g) || uLocal[g] % 3 === 0) coarseList.push(g);
     coarseList.sort((a, b) => (isKey(a) ? 0 : 1) - (isKey(b) ? 0 : 1) || a - b);
