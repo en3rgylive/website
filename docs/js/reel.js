@@ -5,7 +5,8 @@
    - full frames are decoded off the main thread, in a window around the playhead, and drawing never blocks on a decode,
    - the scroll value is eased, so a mouse wheel and a trackpad both feel the same.
    Each chapter holds its first frame while the caption is read and drifts in slowly so the picture never looks frozen.
-   A hard cut between scenes becomes a push through light: the old scene pushes in and blooms, the new one settles out of it. */
+   A hard cut between scenes becomes a push through light: the old scene pushes in and blooms, the new one settles out of it.
+   The landing screen is just a small, clean sun; scrolling reveals the ray, the stars and the corona outward from it. */
 (function () {
   'use strict';
 
@@ -58,7 +59,10 @@
     const fBmp = new Array(N).fill(null), pBmp = new Array(N).fill(null);
     const fFet = new Uint8Array(N), pFet = new Uint8Array(N), fDec = new Uint8Array(N), pDec = new Uint8Array(N);   // 0 idle, 1 busy, 2 done, 3 failed
     const canBmp = typeof createImageBitmap === 'function';
-    const W_FULL = small ? { ahead: 22, behind: 8 } : { ahead: 14, behind: 5 };    // how many full frames stay decoded
+    const IN = M.intro || null;                               // the clean sun for the landing screen
+    let introBmp = null, introFail = false;
+    const t0 = performance.now();
+    const W_FULL = small ? { ahead: 16, behind: 6 } : { ahead: 14, behind: 5 };    // how many full frames stay decoded
     const W_PREV = { ahead: 100, behind: 60 };
     let head = 0, dirSign = 1, dirty = true, firstOk = false, pDone = 0, fPend = 0, pPend = 0, fDecPend = 0, pDecPend = 0, nextP = 0, gen = 0;
     const pOrder = [];
@@ -177,14 +181,19 @@
       return null;
     }
     const dimW = (b) => b.width || b.naturalWidth, dimH = (b) => b.height || b.naturalHeight;
-    function blit(im, alpha, px, zoom) {
+    let g2 = ctx;                                             // where blit draws: the canvas, or the off-screen layer while a reveal is built
+    function blit(im, alpha, px, zoom, anchor) {
       const iw = dimW(im), ih = dimH(im);
       const s = Math.max(cv.width / iw, cv.height / ih) * zoom;
       const w = iw * s, h = ih * s;
       let x = w >= cv.width ? clamp(cv.width / 2 - px * w, cv.width - w, 0) : (cv.width - w) / 2;   // portrait: slide the crop along the picture
-      const y = (cv.height - h) / 2;
-      ctx.globalAlpha = alpha;
-      ctx.drawImage(im, x, y, w, h);
+      let y = (cv.height - h) / 2;
+      if (anchor && anchor.k > 0) {                           // keep a chosen point of the picture (the sun) at a chosen spot on the screen
+        x = lerp(x, anchor.tx * cv.width - anchor.fx * w, anchor.k);
+        y = lerp(y, anchor.ty * cv.height - anchor.fy * h, anchor.k);
+      }
+      g2.globalAlpha = alpha;
+      g2.drawImage(im, x, y, w, h);
       return { x, y, w, h };
     }
     function playT(ci, r) {                                   // chapter progress -> footage progress, with the holds
@@ -192,23 +201,37 @@
       const t = clamp((r - hold[0]) / (1 - hold[0] - hold[1]), 0, 1);
       return lerp(t, smooth(t), EASE);
     }
+    const introOn = () => !!(IN && introBmp);
+    const revealOf = (r) => smooth(clamp(r / IN.to, 0, 1));    // how far the ray has been revealed (0 = only the sun)
     function chapterZoom(ci, t, r) {                          // a chapter can start zoomed out, and every chapter drifts in a little
       const c = clips[ci];
       let z = 1;
-      if (c.zoom) z = lerp(c.zoom[0], c.zoom[1], smooth(clamp(t / (c.zoomT || 0.3), 0, 1)));
+      if (c.zoom) {
+        let z0 = c.zoom[0];
+        if (ci === 0 && introOn()) z0 = lerp(IN.zoom, z0, revealOf(r));   // the landing starts with a small sun, which grows as the ray appears
+        z = lerp(z0, c.zoom[1], smooth(clamp(t / (c.zoomT || 0.3), 0, 1)));
+      }
       return z * (1 + DRIFT * r);
     }
-    function layer(ci, t, alpha, settle, zoom) {
-      const c = clips[ci], n = c.n, f = t * (n - 1), a = Math.floor(f), b = Math.min(n - 1, a + 1);
-      let k = f - a;
-      if (settle > 0) k = lerp(k, k < 0.5 ? 0 : 1, settle);   // when scrolling pauses, rest on a sharp frame
+    function anchorFor(z) {                                   // pins the sun to its landing position while the picture is zoomed out
+      const tgt = (portrait && IN.targetP) || IN.target || [0.5, 0.46];
+      return { fx: IN.cx, fy: IN.cy, tx: tgt[0], ty: tgt[1], k: clamp((1 - z) / (1 - IN.zoom), 0, 1) };
+    }
+    function pxAt(c, t) {
       const kx = c.kx || [0.5, 0.5], p0 = lerp(kx[0], kx[1], t);
       let px = portrait ? p0 : 0.5 + (p0 - 0.5) * 0.5;
       if (crop) px = (px - crop[0]) / (crop[1] - crop[0]);
+      return px;
+    }
+    function layer(ci, t, alpha, settle, zoom, anchor) {
+      const c = clips[ci], n = c.n, f = t * (n - 1), a = Math.floor(f), b = Math.min(n - 1, a + 1);
+      let k = f - a;
+      if (settle > 0) k = lerp(k, k < 0.5 ? 0 : 1, settle);   // when scrolling pauses, rest on a sharp frame
+      const px = pxAt(c, t);
       const fa = pick(ci, a), fb = pick(ci, b);
       if (!fa) return null;
-      const rc = blit(fa, alpha, px, zoom);
-      if (fb && fb !== fa && k > 0.004) blit(fb, alpha * k, px, zoom);
+      const rc = blit(fa, alpha, px, zoom, anchor);
+      if (fb && fb !== fa && k > 0.004) blit(fb, alpha * k, px, zoom, anchor);
       return rc;
     }
     function streak(ci, t, alpha, settle, zoom, amount) {      // a little zoom blur while the picture pushes through a cut
@@ -249,6 +272,28 @@
       for (let k = 0; k < K; k++) if (x < cum[k + 1]) { i = k; break; }
       return { i, r: clamp((x - cum[i]) / wts[i], 0, 1) };
     }
+    const off = document.createElement('canvas'), octx = off.getContext('2d');
+    function reveal(i, r, settle, t, z, an) {                  // landing: the clean sun, then the footage revealed outward from it
+      const rv = revealOf(r);
+      const px = pxAt(clips[0], t);
+      const rcS = blit(introBmp, 1, px, z, an);
+      if (rv > 0.002) {
+        if (off.width !== cv.width || off.height !== cv.height) { off.width = cv.width; off.height = cv.height; }
+        octx.globalCompositeOperation = 'source-over'; octx.clearRect(0, 0, off.width, off.height);
+        g2 = octx;
+        layer(0, t, 1, settle, z, an);
+        g2 = ctx;
+        const sx = rcS.x + IN.cx * rcS.w, sy = rcS.y + IN.cy * rcS.h;
+        const rmax = Math.max(Math.hypot(sx, sy), Math.hypot(cv.width - sx, sy), Math.hypot(sx, cv.height - sy), Math.hypot(cv.width - sx, cv.height - sy));
+        const F = rmax * 0.32, R = Math.pow(rv, 1.15) * (rmax + F);
+        const gr = octx.createRadialGradient(sx, sy, Math.max(0, R - F), sx, sy, Math.max(1, R));
+        gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        octx.globalCompositeOperation = 'destination-in'; octx.fillStyle = gr; octx.fillRect(0, 0, off.width, off.height);
+        octx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1; ctx.drawImage(off, 0, 0);
+      }
+      return rcS;
+    }
     let flash = 0;
     function draw(i, r, settle) {
       head = first[i] + Math.round(playT(i, r) * (clips[i].n - 1));
@@ -272,8 +317,9 @@
         flash = (clips[b].flash || 0) * glow;
         head = first[t < 0.5 ? b - 1 : b] + (t < 0.5 ? clips[b - 1].n - 1 : 0);
       } else {
-        const t = playT(i, r);
-        rc = layer(i, t, 1, settle, chapterZoom(i, t, r));
+        const t = playT(i, r), z = chapterZoom(i, t, r);
+        if (i === 0 && introOn() && revealOf(r) < 0.999) rc = reveal(i, r, settle, t, z, anchorFor(z));
+        else rc = layer(i, t, 1, settle, z, i === 0 && introOn() ? anchorFor(z) : null);
       }
       if (rc && (rc.x > 1 || rc.y > 1)) feather(rc);
       if (flash > 0.004) {
@@ -334,7 +380,8 @@
       const onScreen = !(r.bottom < -50 || r.top > innerHeight + 50);
       if (onScreen) {
         pump();
-        if (dirty || ps !== lastP || Math.abs(settle - lastSettle) > 0.002) { draw(L.i, L.r, settle); dirty = false; lastP = ps; lastSettle = settle; }
+        const waiting = IN && !introBmp && !introFail && now - t0 < 3000;   // the landing sun is a few hundred KB; do not flash the old first frame
+        if (!waiting && (dirty || ps !== lastP || Math.abs(settle - lastSettle) > 0.002)) { draw(L.i, L.r, settle); dirty = false; lastP = ps; lastSettle = settle; }
       }
       ui(L.i, L.r, ps);
       if (onScreen && Math.abs(ps - prev) > 1e-6) {          // on a slow device, trade resolution for smoothness while scrolling
@@ -343,6 +390,9 @@
       }
     }
 
+    if (IN) {
+      blobOf(base + IN.img).then((b) => decodeBlob(b)).then((bm) => { introBmp = bm; dirty = true; }, () => { introFail = true; });
+    }
     resize();
     document.documentElement.classList.add('has-film', 'has-reel');
     requestAnimationFrame(frame);
