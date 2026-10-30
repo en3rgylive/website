@@ -24,11 +24,27 @@
   const filmEl = $('#film'), stick = $('.film-stick'), cv = $('#stage');
   const fail = () => document.documentElement.classList.add('no-film');      // shows the plain list of stills instead
   if (!filmEl || !stick || !cv || !cv.getContext) { fail(); return; }
-  let base = new URLSearchParams(location.search).get('clips') || 'clips/';  // ?clips=other/folder/ to try another set
+  const params = new URLSearchParams(location.search);
+  let base = params.get('clips') || 'clips/';                // ?clips=other/folder/ to try another set
   if (base.slice(-1) !== '/') base += '/';
-  fetch(base + 'manifest.json', { cache: 'no-cache' })
+  let VERTICAL = params.get('vertical') || filmEl.getAttribute('data-vertical') || '';   // a film made in 9:16 for upright screens (tools/pack_clips.py --vertical); ?vertical=folder/ tries one
+  if (VERTICAL && VERTICAL.slice(-1) !== '/') VERTICAL += '/';
+  const upright = window.matchMedia('(max-aspect-ratio: 4/5)');   // a phone or tablet held upright, or a tall narrow window
+  const getManifest = (b) => fetch(b + 'manifest.json', { cache: 'no-cache' })
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error('no manifest'))))
-    .then((m) => { if (!m || !m.clips || !m.clips.length) throw new Error('empty manifest'); start(m); })
+    .then((m) => { if (!m || !m.clips || !m.clips.length) throw new Error('empty manifest'); return m; });
+  const startedUpright = upright.matches;
+  (VERTICAL && !params.get('clips') && startedUpright ? getManifest(VERTICAL).then((m) => { base = VERTICAL; return m; }, () => getManifest(base)) : getManifest(base))
+    .then((m) => {
+      const usedVertical = !!VERTICAL && base === VERTICAL;
+      let turnTimer = 0;
+      const onTurn = () => {                                 // the phone was turned: switch to the film made for that way up
+        clearTimeout(turnTimer);
+        turnTimer = setTimeout(() => { if (upright.matches !== startedUpright && (usedVertical || upright.matches)) location.reload(); }, 500);
+      };
+      if (VERTICAL && !params.get('clips')) { if (upright.addEventListener) upright.addEventListener('change', onTurn); else if (upright.addListener) upright.addListener(onTurn); }
+      start(m);
+    })
     .catch(fail);
 
   function start(M) {
@@ -462,7 +478,7 @@
 
     /* ---------- loop ---------- */
     let forced = null;
-    window.HNreel = { set: (p) => { forced = p; }, info: () => ({ chapters: K, frames: N, previews: pDone, decoded: fBmp.reduce((a, b) => a + (b ? 1 : 0), 0), fetched: fFet.reduce((a, s) => a + (s === 2 ? 1 : 0), 0), small, snap: snapOn, stops: stopY.slice(), pins: pins.slice(), dpr, headSharp: !!fBmp[head], head, stopF: stopF.slice(), decodedIdx: fBmp.map((b, i) => b ? i : -1).filter((i) => i >= 0) }) };
+    window.HNreel = { set: (p) => { forced = p; }, info: () => ({ chapters: K, frames: N, previews: pDone, decoded: fBmp.reduce((a, b) => a + (b ? 1 : 0), 0), fetched: fFet.reduce((a, s) => a + (s === 2 ? 1 : 0), 0), small, film: base, snap: snapOn, stops: stopY.slice(), pins: pins.slice(), dpr, headSharp: !!fBmp[head], head, stopF: stopF.slice(), decodedIdx: fBmp.map((b, i) => b ? i : -1).filter((i) => i >= 0) }) };
     function readProgress() {
       const r = filmEl.getBoundingClientRect();
       const span = r.height - (stick.clientHeight || window.innerHeight);

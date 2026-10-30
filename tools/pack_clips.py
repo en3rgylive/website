@@ -19,6 +19,14 @@ Every source frame is kept by default, so scrubbing is as smooth as the footage.
 Each scene is one chapter of the film. For each chapter the page holds the first frame for a short scroll distance
 (--hold) so the caption can be read, and a hard cut between scenes becomes a push through light (--seam, --push, --flash).
 A chapter can start zoomed out (--zoom 1=0.72:1.0:0.3 means chapter 1 starts at 72% and reaches 100% by 30% of its footage).
+
+Vertical (9:16) footage for phones is packed on its own, into a second folder that the page uses on upright screens:
+
+    python3 tools/pack_clips.py clips_9x16 docs/clips-m --vertical --fps 12
+
+--vertical keeps whole frames (no crop), writes only the phone frames and previews, and points the "desktop" entries of the
+manifest at the same files, so nothing is stored twice. Give it a folder of vertical clips, one per chapter and in the same order
+as the main film (01.mp4 ... 06.mp4). The page falls back to docs/clips on any screen that is not upright.
 """
 import argparse, glob, json, math, os, re, shutil, subprocess, sys, tempfile
 from concurrent.futures import ProcessPoolExecutor
@@ -88,12 +96,13 @@ def main():
     ap.add_argument('--cuts', default='', help='cut times in seconds for a single video, e.g. 2.5,4.67,7.0')
     ap.add_argument('--auto-cuts', nargs='?', const=0.22, type=float, default=None, help='find the cuts automatically (optional scene threshold, default 0.22)')
     ap.add_argument('--fps', type=float, default=0, help='frames kept per second; 0 keeps every frame (default)')
-    ap.add_argument('--dw', type=int, default=2560, help='desktop frame width (default 2560)')
+    ap.add_argument('--vertical', action='store_true', help='the footage is vertical (9:16) and is for phones: pack whole frames for phones only (no crop, no separate desktop set)')
+    ap.add_argument('--dw', type=int, default=0, help='frame width (default 2560; 1080 with --vertical, and never larger than the source)')
     ap.add_argument('--mh', type=int, default=1080, help='phone frame height; the width follows from --mcrop (default 1080)')
     ap.add_argument('--mcrop', default='0.15:0.85', help='the band of the picture kept for phones, as start:end of the width (default 0.15:0.85)')
     ap.add_argument('--dfmt', default='avif', choices=['avif', 'webp'], help='format of the desktop and phone frames (default avif)')
     ap.add_argument('--speed', type=int, default=6, help='AVIF encoder speed, 0 slowest to 10 fastest (default 6)')
-    ap.add_argument('--pw', type=int, default=560, help='preview frame width (default 560)')
+    ap.add_argument('--pw', type=int, default=0, help='preview frame width (default 560; 360 with --vertical)')
     ap.add_argument('--pstep', type=int, default=2, help='keep every Nth frame in the preview set (default 2)')
     ap.add_argument('--q', type=int, default=52, help='desktop quality (AVIF default 52; use about 80 for WebP)')
     ap.add_argument('--mq', type=int, default=52, help='phone quality (AVIF default 52; use about 76 for WebP)')
@@ -107,6 +116,10 @@ def main():
     ap.add_argument('--kx', default='', help='phone crop focus per chapter as start:end, comma separated, e.g. 0.56:0.5,0.5:0.5')
     ap.add_argument('--weight-power', type=float, default=0.55, help='scroll length of a chapter grows with duration to this power (default 0.55)')
     a = ap.parse_args()
+    a.dw = a.dw or (1080 if a.vertical else 2560)
+    a.pw = a.pw or (360 if a.vertical else 560)
+    if a.vertical:
+        a.mcrop = '0:1'
 
     hold = [float(x) for x in a.hold.split(',')]
     zooms = {}
@@ -139,8 +152,9 @@ def main():
                 sys.exit('no clips found in ' + a.src)
             src_fps = None
             for ci, f in enumerate(files):
-                chapters.append(decode(f, os.path.join(tmp_root, 'c%02d' % ci), a.dw))
-                src_fps = src_fps or probe(f)[2]
+                pw0, ph0, pfps, _ = probe(f)
+                chapters.append(decode(f, os.path.join(tmp_root, 'c%02d' % ci), min(a.dw, pw0) if a.vertical else a.dw))
+                src_fps = src_fps or pfps
         else:
             w, h, src_fps, dur = probe(a.src)
             frames = decode(a.src, os.path.join(tmp_root, 'all'), a.dw)
@@ -168,6 +182,7 @@ def main():
             kx.append([0.5, 0.5])
 
         os.makedirs(a.out, exist_ok=True)
+        subs = ('m', 'p') if a.vertical else ('d', 'm', 'p')
         for sub in ('d', 'm', 'p'):
             shutil.rmtree(os.path.join(a.out, sub), ignore_errors=True)
         for stale in ('poster.webp',):
@@ -179,8 +194,8 @@ def main():
         dw = a.dw if a.dw < sw else sw
         dh = round(sh * dw / sw) // 2 * 2
         c0, c1 = [float(x) for x in a.mcrop.split(':')]
-        mh = a.mh // 2 * 2
-        mw = round((c1 - c0) * sw * mh / sh) // 2 * 2
+        mh = dh if a.vertical else a.mh // 2 * 2
+        mw = dw if a.vertical else round((c1 - c0) * sw * mh / sh) // 2 * 2
         sizes = {'d': (dw, dh), 'm': (mw, mh), 'p': (a.pw, round(dh * a.pw / dw) // 2 * 2)}
         qual = {'d': a.q, 'm': a.mq, 'p': a.pq}
         fmts = {'d': a.dfmt, 'm': a.dfmt, 'p': 'webp'}
@@ -191,13 +206,16 @@ def main():
         manifest = {'version': 4, 'fps': round(a.fps or src_fps or 24.0, 3), 'drift': a.drift, 'pstep': a.pstep,
                     'd': dict(zip('wh', sizes['d']), ext=fmts['d']), 'm': dict(zip('wh', sizes['m']), ext=fmts['m'], crop=[c0, c1]),
                     'p': dict(zip('wh', sizes['p']), ext='webp'), 'clips': [], 'cuts': []}
+        if a.vertical:
+            manifest['vertical'] = True
+            manifest['d'] = dict(manifest['m'])                  # the page reads the "desktop" entries on screens that are not phones: it is the same set
         pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 2))
         total = {'d': 0, 'm': 0, 'p': 0}
         for ci, frames in enumerate(chapters):
             cid = '%02d' % (ci + 1)
             n = len(frames)
             jobs = []
-            for sub in ('d', 'm', 'p'):
+            for sub in subs:
                 d = os.path.join(a.out, sub, cid)
                 os.makedirs(d, exist_ok=True)
                 fw, fh = sizes[sub]
@@ -206,10 +224,13 @@ def main():
                 jobs += [(src, os.path.join(d, '%04d.%s' % (k + 1, fmts[sub])), fw, fh, qual[sub], fmts[sub], crop, a.speed) for k, src in enumerate(frames) if keep(k)]
             out = list(pool.map(write_frame, jobs, chunksize=4))
             npv = sum(1 for k in range(n) if k % a.pstep == 0 or k == n - 1)
-            ds, ms, ps = sum(out[:n]), sum(out[n:2 * n]), sum(out[2 * n:])
+            if a.vertical:
+                ds, ms, ps = 0, sum(out[:n]), sum(out[n:])
+            else:
+                ds, ms, ps = sum(out[:n]), sum(out[n:2 * n]), sum(out[2 * n:])
             total['d'] += ds; total['m'] += ms; total['p'] += ps
             clip = {'id': cid, 'n': n, 'dur': round(durs[ci], 3), 'w': weights[ci], 'hold': hold, 'seam': 0, 'flash': 0, 'push': a.push,
-                    'kx': kx[ci], 'dir': 'd/%s/' % cid, 'mdir': 'm/%s/' % cid, 'pdir': 'p/%s/' % cid}
+                    'kx': kx[ci], 'dir': ('m/%s/' if a.vertical else 'd/%s/') % cid, 'mdir': 'm/%s/' % cid, 'pdir': 'p/%s/' % cid}
             if ci in zooms:
                 clip['zoom'] = zooms[ci][:2]; clip['zoomT'] = zooms[ci][2]
             manifest['clips'].append(clip)
@@ -228,6 +249,8 @@ def main():
         with open(os.path.join(a.out, 'manifest.json'), 'w') as fp:
             json.dump(manifest, fp, indent=1)
         print('desktop %.1f MB, phone %.1f MB, preview %.1f MB, %d chapters -> %s' % (total['d'] / 1e6, total['m'] / 1e6, total['p'] / 1e6, K, a.out))
+        if a.vertical:
+            print('vertical set: the page uses it on upright screens and needs an "intro" block only if the first chapter should open on a lone sun (see tools/make_intro.py)')
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
