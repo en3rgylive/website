@@ -35,7 +35,7 @@ Open http://localhost:8000.
 docs/                 the website (this folder is what gets published)
   index.html          page markup and copy
   css/styles.css      design tokens (top of file) and all styles
-  js/reel.js          the film player: frame scrubbing, holds, cuts, captions, phone crop
+  js/reel.js          the film player: smooth frame scrubbing, holds, push-through-light cuts, captions, phone crop
   js/ui.js            header, bill estimate, enquiry form
   clips/              the film, packed into frame sheets, with manifest.json
   plates/             still images for the gallery
@@ -49,7 +49,8 @@ keyframes/            16:9 start and end frames, for remaking the footage
 - **Enquiries:** the form sends an email to the address in `docs/js/ui.js` (`EMAIL`). Set `WHATSAPP` there (country code and number, digits only) and it sends to WhatsApp instead.
 - **Copy, brand, colours:** `docs/index.html`; colours and fonts are the tokens at the top of `docs/css/styles.css`.
 - **Real figures:** the page deliberately has no company statistics, phone number or address, because none were supplied. Add them where you want them in `docs/index.html`.
-- **Footage:** `python3 tools/pack_clips.py movie.mp4 docs/clips --auto-cuts --dw 1920 --mw 1280 --grid 2x1 --mgrid 2x2 --q 76 --mq 70` cuts a video at its scene changes and writes the frame sheets and manifest the page loads. It needs `ffmpeg` and Pillow. If the video has a different number of scenes, update the six `.cap` blocks (and the `.static` list under them) in `docs/index.html`. Options are listed at the top of `tools/pack_clips.py`.
+- **Footage:** `python3 tools/pack_clips.py movie.mp4 docs/clips --auto-cuts --zoom 1=0.78:1.0:0.3` cuts a video at its scene changes and writes the frames and manifest the page loads (one file per frame for desktop, phone and a small preview set). It needs `ffmpeg` and Pillow. If the video has a different number of scenes, update the `.cap` blocks (and the `.static` list under them) in `docs/index.html`. Options are listed at the top of `tools/pack_clips.py`. The main ones: `--zoom` (start a chapter zoomed out, for example the sun), `--seam`, `--push` and `--flash` (the push through light at a cut), `--hold` (how long a chapter holds its first frame), `--drift` (slow zoom across each chapter), `--kx` (phone crop focus).
+- **How the player stays smooth:** small preview frames load first, so scrubbing works at once. Full frames are fetched in order of distance from the playhead and decoded off the main thread inside a window around it, and drawing never waits on a decode. If a full frame is not ready, the preview frame is drawn instead.
 - **Remaking the footage:** `tools/PROMPTS.md` has a start image, end image and prompt for seven camera moves between eight keyframes.
 
 ## Before you promote it
