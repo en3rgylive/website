@@ -220,16 +220,32 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius
   .est-out > div:nth-child(even) { padding-left: 14px; }
   .form { grid-template-columns: minmax(0, 1fr); }
   .reach { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .film { height: 860vh; }
-  .film-bar { display: none; }
-  #stage { height: 58svh; }                                /* its bottom edge fades inside the canvas (reel.js), not with a CSS mask */
-  .film-stick::before { background: linear-gradient(180deg, rgba(3, 4, 10, 0.5) 0%, rgba(3, 4, 10, 0) 110px); }
-  .cap { bottom: clamp(84px, 12svh, 120px); }
-  .cap h1, .cap h2 { font-size: clamp(1.9rem, 8vw, 2.6rem); }
-  .counter { left: var(--gl); right: auto; bottom: 22px; }
-  .counter em { display: none; }                            /* the caption already names the chapter, and the button needs the room */
-  .cue { bottom: 18px; }
   .shot figcaption { flex-direction: column; gap: 2px; }
+}
+
+/* ---------- the film on a phone: the picture fills the screen and the words sit in the middle of it ---------- */
+.ticks { display: none; }
+@media (max-width: 600px) {
+  .film { height: 820vh; }
+  .film-bar, .counter { display: none; }
+  .film-stick::before { background: linear-gradient(180deg, rgba(3, 4, 10, 0.66) 0%, rgba(3, 4, 10, 0) 150px), linear-gradient(0deg, rgba(3, 4, 10, 0.72) 0%, rgba(3, 4, 10, 0) 30%); }
+  .cap {                                                     /* text-sized and centred between the header and the controls, so each caption stays a small layer */
+    left: max(30px, var(--gl)); right: max(30px, var(--gr)); bottom: auto; top: calc(50% - 33px); translate: 0 -50%; max-width: none;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    text-shadow: 0 2px 26px rgba(0, 0, 0, 0.7), 0 1px 3px rgba(0, 0, 0, 0.45);
+  }
+  .cap[data-i="0"] { top: calc(50% + 21svh - 75px); }       /* the sun has the upper half of the first chapter, the words sit below it */
+  .cap .k { display: inline-flex; align-items: center; gap: 14px; margin-bottom: 22px; font-size: 0.68rem; letter-spacing: 0.34em; padding-left: 0.34em; }
+  .cap .k::before, .cap .k::after { content: ""; width: 22px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold)); opacity: 0.7; }
+  .cap .k::after { transform: scaleX(-1); }
+  .cap h1, .cap h2 { font-size: clamp(1.95rem, 9.2vw, 2.6rem); line-height: 1.05; letter-spacing: -0.02em; }
+  .cap .s { margin-top: 20px; max-width: 19.5em; font-size: 0.98rem; line-height: 1.58; color: rgba(243, 239, 231, 0.84); text-wrap: pretty; }
+  @media (max-height: 640px) { .cap[data-i="0"] { top: calc(50% + 17svh - 75px); } .cap .s { font-size: 0.92rem; } .cue { display: none; } }
+  .ticks { display: flex; gap: 7px; position: absolute; z-index: 3; left: 50%; translate: -50% 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 56px); pointer-events: none; }   /* clear of Safari's floating address bar */
+  .ticks i { position: relative; width: 22px; height: 2px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); overflow: hidden; }
+  .ticks b { position: absolute; inset: 0; background: var(--gold); transform-origin: 0 50%; transform: scaleX(0); }
+  .film-cta { bottom: calc(env(safe-area-inset-bottom, 0px) + 88px); }
+  .cue { bottom: calc(env(safe-area-inset-bottom, 0px) + 92px); }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

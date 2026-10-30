@@ -74,7 +74,7 @@
     let head = 0, dirSign = 1, dirty = true, firstOk = false, pDone = 0, fPend = 0, pPend = 0, fDecPend = 0, pDecPend = 0, nextP = 0, gen = 0;
     const pOrder = [];
     clips.forEach((c, ci) => { pOrder.push(first[ci]); pOrder.push(first[ci] + c.n - 1); });
-    for (let g = 0; g < N; g++) if (hasPrev(g)) pOrder.push(g);
+    const nKey = pOrder.length;                               // after the key frames, previews load nearest to the playhead first
     let pTotal = 0;
     for (let g = 0; g < N; g++) if (hasPrev(g)) pTotal++;
     const loadEl = $('#filmLoad'), loadBar = loadEl && loadEl.querySelector('i');
@@ -112,8 +112,14 @@
     }
     function pump() {
       // 1. previews: everything, key frames first
-      while (hasP && pPend < 8 && nextP < pOrder.length) {
-        const g = pOrder[nextP++];
+      while (hasP && pPend < 8) {
+        let g = -1;
+        if (nextP < nKey) g = pOrder[nextP++];
+        else {
+          let bd = 1e9;
+          for (let c = 0; c < N; c++) { if (pFet[c] || !hasPrev(c)) continue; const d = Math.abs(c - head); if (d < bd) { bd = d; g = c; } }
+          if (g < 0) break;
+        }
         if (pFet[g]) continue;
         pFet[g] = 1; pPend++;
         blobOf(pUrl(g)).then((b) => { pBlob[g] = b; pFet[g] = 2; }, () => { pFet[g] = 3; if (g === 0) fail(); })
@@ -163,14 +169,13 @@
     }
 
     /* ---------- sizing ---------- */
-    let W = 0, H = 0, dpr = 1, portrait = false, shortCv = false, dprCap = small ? 3 : 2;   // phones draw at their full pixel density
+    let W = 0, H = 0, dpr = 1, portrait = false, dprCap = small ? 3 : 2;   // draw at the screen's own density: a canvas the browser has to stretch by a fraction every frame is slower and softer
     function resize() {
       const r = cv.getBoundingClientRect();
       dpr = Math.min(window.devicePixelRatio || 1, dprCap);
       W = Math.max(2, Math.round(r.width)); H = Math.max(2, Math.round(r.height));
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
       portrait = W / H < 1.0;
-      shortCv = H < (stick.clientHeight || H) - 4;            // the picture ends above the bottom of the screen (phones): it fades out inside the canvas
       stick.classList.toggle('portrait', portrait);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       const nat = M[small ? 'm' : 'd'], want = sizeFor(nat.w, nat.h);
@@ -179,6 +184,7 @@
         for (let g = 0; g < N; g++) { closeBmp(fBmp[g]); fBmp[g] = null; if (fDec[g] !== 3) fDec[g] = 0; }
       }
       dirty = true;
+      if (typeof measureCaps === 'function') measureCaps();
     }
     window.addEventListener('resize', resize);
     window.addEventListener('orientationchange', () => setTimeout(resize, 250));
@@ -222,18 +228,19 @@
     const introOn = () => !!(IN && introBmp);
     const revealOf = (r) => smooth(clamp(r / IN.to, 0, 1));    // how far the ray has been revealed (0 = only the sun)
     function chapterZoom(ci, t, r) {                          // a chapter can start zoomed out, and every chapter drifts in a little
-      const c = clips[ci];
+      const c = clips[ci], zr = (portrait && c.zoomP) || c.zoom;   // a tall screen can have its own zoom: the whole sun has to fit in a narrow window
       let z = 1;
-      if (c.zoom) {
-        let z0 = c.zoom[0];
-        if (ci === 0 && introOn()) z0 = lerp(IN.zoom, z0, revealOf(r));   // the landing starts with a small sun, which grows as the ray appears
-        z = lerp(z0, c.zoom[1], smooth(clamp(t / (c.zoomT || 0.3), 0, 1)));
+      if (zr) {
+        let z0 = zr[0];
+        if (ci === 0 && introOn()) z0 = lerp((portrait && IN.zoomP) || IN.zoom, z0, revealOf(r));   // the landing starts with a small sun, which grows as the ray appears
+        z = lerp(z0, zr[1], smooth(clamp(t / (c.zoomT || 0.3), 0, 1)));
       }
       return z * (1 + DRIFT * r);
     }
     function anchorFor(z) {                                   // pins the sun to its landing position while the picture is zoomed out
       const tgt = (portrait && IN.targetP) || IN.target || [0.5, 0.46];
-      return { fx: IN.cx, fy: IN.cy, tx: tgt[0], ty: tgt[1], k: clamp((1 - z) / (1 - IN.zoom), 0, 1) };
+      const k = portrait && IN.fixP ? 1 : clamp((1 - z) / (1 - IN.zoom), 0, 1);   // on a phone the sun stays in the upper half for the whole chapter, above the words
+      return { fx: IN.cx, fy: IN.cy, tx: tgt[0], ty: tgt[1], k };
     }
     function pxAt(c, t) {
       const kx = c.kx || [0.5, 0.5], p0 = lerp(kx[0], kx[1], t);
@@ -252,11 +259,11 @@
       if (fb && fb !== fa && k > 0.004) blit(fb, alpha * k, px, zoom, anchor);
       return rc;
     }
-    function streak(ci, t, alpha, settle, zoom, amount) {      // a little zoom blur while the picture pushes through a cut
-      if (amount < 0.01 || reduce || small) return layer(ci, t, alpha, settle, zoom);   // no zoom blur on phones: three layers per side is a lot of fill
+    function streak(ci, t, alpha, settle, zoom, amount, an) { // a little zoom blur while the picture pushes through a cut
+      if (amount < 0.01 || reduce || small) return layer(ci, t, alpha, settle, zoom, an);   // no zoom blur on phones: three layers per side is a lot of fill
       let rc = null;
       for (let j = 0; j < 3; j++) {
-        const r2 = layer(ci, t, j === 0 ? alpha : alpha / (j + 1), settle, zoom * (1 + amount * j * 0.5));
+        const r2 = layer(ci, t, j === 0 ? alpha : alpha / (j + 1), settle, zoom * (1 + amount * j * 0.5), an);
         if (!rc) rc = r2;
       }
       return rc;
@@ -330,7 +337,8 @@
         const outT = playT(b - 1, clamp(q - (b - 1), 0, 1)), inT = playT(b, clamp(q - b, 0, 1));
         const outZ = chapterZoom(b - 1, outT, clamp(q - (b - 1), 0, 1)) * (1 + push * smooth(clamp(1 + u, 0, 1)));
         const inZ = chapterZoom(b, inT, clamp(q - b, 0, 1)) * (1 + push * (1 - smooth(clamp(u, 0, 1))));
-        streak(b - 1, outT, 1, settle, outZ, 0.05 * pk);
+        const rcOut = streak(b - 1, outT, 1, settle, outZ, 0.05 * pk, b === 1 && introOn() ? anchorFor(outZ) : null);
+        if (rcOut && (rcOut.x > 1 || rcOut.y > 1)) feather(rcOut);   // a zoomed-out scene melts into the page here too, before the next one arrives
         streak(b, inT, t, settle, inZ, 0.05 * pk);
         flash = (clips[b].flash || 0) * glow;
         head = first[t < 0.5 ? b - 1 : b] + (t < 0.5 ? clips[b - 1].n - 1 : 0);
@@ -346,33 +354,50 @@
         ctx.fillStyle = '#ffd9a0'; ctx.fillRect(0, 0, cv.width, cv.height);
       }
       ctx.globalAlpha = 1;
-      if (shortCv) {                                          // soft bottom edge drawn into the canvas (a CSS mask over a moving canvas costs more on a phone)
-        const g = ctx.createLinearGradient(0, cv.height * 0.8, 0, cv.height);
-        g.addColorStop(0, 'rgba(3,4,10,0)'); g.addColorStop(1, 'rgba(3,4,10,1)');
-        ctx.fillStyle = g; ctx.fillRect(0, cv.height * 0.8, cv.width, cv.height * 0.2 + 1);
+      if (phoneUI) {                                          // a soft band of shade behind the words; it fades with them, so a cut shows the bare picture
+        for (let n = 0; n < capV.length; n++) {
+          const a = capV[n], b = capBand[n];
+          if (a < 0.004 || !b) continue;
+          const g = ctx.createLinearGradient(0, b.y - b.h, 0, b.y + b.h);
+          g.addColorStop(0, 'rgba(3,4,10,0)'); g.addColorStop(0.5, 'rgba(3,4,10,' + (0.8 * a).toFixed(3) + ')'); g.addColorStop(1, 'rgba(3,4,10,0)');
+          ctx.fillStyle = g; ctx.fillRect(0, b.y - b.h, cv.width, b.h * 2);
+        }
       }
     }
 
     /* ---------- captions, counter, progress, call to action ---------- */
     const capEls = $$('.cap'), flareEl = $('#flare');
+    const ticksEl = $('#ticks'), tickFill = [];
+    if (ticksEl) for (let k = 0; k < K; k++) { const t = document.createElement('i'), f = document.createElement('b'); t.appendChild(f); ticksEl.appendChild(t); tickFill.push({ el: f, v: -1 }); }
     const barEl = $('#filmBar'), cueEl = $('#cue'), ctaEl = $('#filmCta'), cNum = $('#cNum'), cName = $('#cName'), cTot = $('.counter span');
     const NAMES = capEls.map((el) => { const k = $('.k', el); return k ? k.textContent : ''; });
     if (cTot) cTot.textContent = '/ ' + String(K).padStart(2, '0');
     let lastIdx = -1;
     const RISE = small ? 14 : 24, LEAVE = small ? 10 : 16;     // captions only fade and rise a little; nothing scales
     const capSt = capEls.map(() => ({ o: '', t: '', vis: '', inert: null }));
+    const capV = capEls.map(() => 0), capBand = [];            // how visible each caption is, and where its soft shade sits on the canvas (phones)
+    let phoneUI = false, capChanged = false;
+    function measureCaps() {                                  // phones: the shade behind each caption is painted into the canvas, in the same pass as the picture
+      phoneUI = window.matchMedia('(max-width: 600px)').matches;
+      if (!phoneUI) return;
+      const sr = stick.getBoundingClientRect();
+      capEls.forEach((el, n) => { const rc = el.getBoundingClientRect(); capBand[n] = { y: (rc.top + rc.height / 2 - sr.top) * dpr, h: Math.max(rc.height * 1.1, 150) * dpr }; });
+    }
     function ui(i, r, P) {
       const q = i + r;
+      capChanged = false;
       capEls.forEach((el, n) => {
         const k = +el.dataset.i, st = capSt[n];
         const inK = k === 0 ? 1 : sstep(k + 0.1, k + 0.24, q), outK = k >= K - 1 ? 1 : 1 - sstep(k + 0.78, k + 0.9, q);
         const v = inK * outK;
+        if (Math.abs(v - capV[n]) > 0.002 || (v === 0) !== (capV[n] === 0)) { capV[n] = v; capChanged = true; }
         const o = v.toFixed(3), t = 'translate3d(0,' + ((1 - inK) * RISE - (1 - outK) * LEAVE).toFixed(1) + 'px,0)', vis = v > 0.01 ? 'visible' : 'hidden', inert = v < 0.5;
         if (o !== st.o) { el.style.opacity = o; st.o = o; }
         if (t !== st.t) { el.style.transform = t; st.t = t; }
         if (vis !== st.vis) { el.style.visibility = vis; st.vis = vis; }
         if (inert !== st.inert) { el.toggleAttribute('inert', inert); st.inert = inert; }
       });
+      tickFill.forEach((t, k) => { const v = Math.round(clamp(q - k, 0, 1) * 100) / 100; if (v !== t.v) { t.v = v; t.el.style.transform = 'scaleX(' + v + ')'; } });
       if (barEl) barEl.style.transform = 'scaleY(' + P.toFixed(4) + ')';
       if (cueEl) cueEl.style.opacity = (1 - sstep(0.0, 0.2, q)).toFixed(3);
       if (ctaEl) ctaEl.classList.toggle('on', q > 0.55);
@@ -405,13 +430,13 @@
     let stopF = [], pinAt = -2;                               // the frame each stop rests on, and which stop the playhead is nearest to
     function updatePins() {
       let n = 0, bd = 1e9;
-      stopF.forEach((g, i) => { const d = Math.abs(g - head); if (d < bd) { bd = d; n = i; } });
+      stopY.forEach((y, i) => { const d = Math.abs(y - window.scrollY); if (d < bd) { bd = d; n = i; } });
       if (n === pinAt) return;
       pinAt = n; pins = [];
       [n + 1, n - 1].forEach((i) => { if (i >= 0 && i < stopF.length) for (let d = -2; d <= 2; d++) { const g = stopF[i] + d; if (g >= 0 && g < N) pins.push(g); } });
     }
     if (coarse && K > 1) {
-      stopQ = [0]; for (let k = 0; k < K; k++) stopQ.push(k + 0.55); stopQ.push('end');
+      stopQ = [0, IN ? 0.3 : 0.55]; for (let k = 1; k < K; k++) stopQ.push(k + 0.55); stopQ.push('end');   // landing, the sun with its ray (the reveal is done), then the middle of each chapter
       stopF = stopQ.map((q) => { if (q === 'end') return N - 1; const ci = Math.floor(q), r = q - ci; return first[ci] + Math.round(playT(ci, r) * (clips[ci].n - 1)); });
       stopQ.forEach(() => snapBox.appendChild(document.createElement('i')));
       filmEl.appendChild(snapBox);
@@ -437,7 +462,7 @@
 
     /* ---------- loop ---------- */
     let forced = null;
-    window.HNreel = { set: (p) => { forced = p; }, info: () => ({ chapters: K, frames: N, previews: pDone, decoded: fBmp.reduce((a, b) => a + (b ? 1 : 0), 0), fetched: fFet.reduce((a, s) => a + (s === 2 ? 1 : 0), 0), small, snap: snapOn, stops: stopY.slice(), pins: pins.slice(), headSharp: !!fBmp[head], head, stopF: stopF.slice(), decodedIdx: fBmp.map((b, i) => b ? i : -1).filter((i) => i >= 0) }) };
+    window.HNreel = { set: (p) => { forced = p; }, info: () => ({ chapters: K, frames: N, previews: pDone, decoded: fBmp.reduce((a, b) => a + (b ? 1 : 0), 0), fetched: fFet.reduce((a, s) => a + (s === 2 ? 1 : 0), 0), small, snap: snapOn, stops: stopY.slice(), pins: pins.slice(), dpr, headSharp: !!fBmp[head], head, stopF: stopF.slice(), decodedIdx: fBmp.map((b, i) => b ? i : -1).filter((i) => i >= 0) }) };
     function readProgress() {
       const r = filmEl.getBoundingClientRect();
       const span = r.height - (stick.clientHeight || window.innerHeight);
@@ -460,6 +485,8 @@
       if (Math.abs(target - lastTarget) > 0.00002 || Math.abs(ps - target) > 0.0004) { lastMove = now; lastTarget = target; }
       const settle = reduce ? 1 : smooth(clamp((now - lastMove) / 1000 - 0.12, 0, 0.3) / 0.3);
       const L = locate(ps);
+      ui(L.i, L.r, ps);
+      if (capChanged && phoneUI) dirty = true;
       const r = filmEl.getBoundingClientRect();
       const onScreen = !(r.bottom < -50 || r.top > innerHeight + 50);
       if (onScreen) {
@@ -467,10 +494,9 @@
         const waiting = IN && !introBmp && !introFail && now - t0 < 3000;   // the landing sun is a few hundred KB; do not flash the old first frame
         if (!waiting && (dirty || ps !== lastP || Math.abs(settle - lastSettle) > 0.002)) { draw(L.i, L.r, settle); dirty = false; lastP = ps; lastSettle = settle; }
       }
-      ui(L.i, L.r, ps);
       if (onScreen && Math.abs(ps - prev) > 1e-6) {          // on a slow device, trade resolution for smoothness while scrolling
         ema = lerp(ema, dt * 1000, 0.08);
-        if (++moving % 60 === 0 && ema > 30 && dprCap > 1 && (window.devicePixelRatio || 1) > 1) { dprCap = Math.max(1, dprCap - 0.5); resize(); }
+        if (++moving % 90 === 0 && ema > 38 && dprCap > 1 && (window.devicePixelRatio || 1) > 1) { dprCap = Math.max(1, Math.ceil(dprCap) - 1); resize(); }   // slow device: step down in whole numbers, never to a fractional stretch
       }
     }
 
@@ -478,6 +504,7 @@
       blobOf(base + IN.img).then((b) => decodeBlob(b)).then((bm) => { introBmp = bm; dirty = true; }, () => { introFail = true; });
     }
     resize();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measureCaps(); dirty = true; });   // the caption sizes change once the web fonts arrive
     document.documentElement.classList.add('has-film', 'has-reel');
     requestAnimationFrame(frame);
     setTimeout(() => { if (!firstOk) fail(); }, 12000);
