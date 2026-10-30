@@ -32,7 +32,7 @@
     const ctx = cv.getContext('2d', { alpha: false });
     const clips = M.clips, K = clips.length;                 // K chapters
     const small = coarse || Math.min(screen.width || 1200, screen.height || 800) < 700;
-    const ext = M.ext || 'webp';
+    const extOf = (set) => (set && set.ext) || M.ext || 'webp';
     const hasP = !!(M.p && clips[0].pdir), pstep = M.pstep || 1;
     const DRIFT = reduce ? 0 : (M.drift != null ? M.drift : 0.05);
     const EASE = reduce ? 0 : 0.35;                          // a little easing on the footage inside each chapter
@@ -47,8 +47,10 @@
     let N = 0;
     clips.forEach((c, ci) => { first.push(N); for (let i = 0; i < c.n; i++) { gClip.push(ci); gLocal.push(i); } N += c.n; });
     const pad = (n) => String(n).padStart(4, '0');
-    const fUrl = (g) => { const c = clips[gClip[g]]; return base + (small ? (c.mdir || c.dir) : c.dir) + pad(gLocal[g] + 1) + '.' + ext; };
-    const pUrl = (g) => base + clips[gClip[g]].pdir + pad(gLocal[g] + 1) + '.' + ext;
+    const fExt = extOf(small ? M.m : M.d), pExt = extOf(M.p);
+    const crop = small && M.m && M.m.crop;                    // the phone set keeps only the middle band of the picture
+    const fUrl = (g) => { const c = clips[gClip[g]]; return base + (small ? (c.mdir || c.dir) : c.dir) + pad(gLocal[g] + 1) + '.' + fExt; };
+    const pUrl = (g) => base + clips[gClip[g]].pdir + pad(gLocal[g] + 1) + '.' + pExt;
     const hasPrev = (g) => hasP && (gLocal[g] % pstep === 0 || gLocal[g] === clips[gClip[g]].n - 1);   // the preview set may keep only every Nth frame
 
     /* ---------- frames: fetched as blobs, decoded to bitmaps only inside a window around the playhead ---------- */
@@ -56,7 +58,7 @@
     const fBmp = new Array(N).fill(null), pBmp = new Array(N).fill(null);
     const fFet = new Uint8Array(N), pFet = new Uint8Array(N), fDec = new Uint8Array(N), pDec = new Uint8Array(N);   // 0 idle, 1 busy, 2 done, 3 failed
     const canBmp = typeof createImageBitmap === 'function';
-    const W_FULL = small ? { ahead: 22, behind: 8 } : { ahead: 28, behind: 10 };   // how many full frames stay decoded
+    const W_FULL = small ? { ahead: 22, behind: 8 } : { ahead: 14, behind: 5 };    // how many full frames stay decoded
     const W_PREV = { ahead: 100, behind: 60 };
     let head = 0, dirSign = 1, dirty = true, firstOk = false, pDone = 0, fPend = 0, pPend = 0, fDecPend = 0, pDecPend = 0, nextP = 0, gen = 0;
     const pOrder = [];
@@ -140,7 +142,7 @@
     }
 
     /* ---------- sizing ---------- */
-    let W = 0, H = 0, dpr = 1, portrait = false, dprCap = 2;
+    let W = 0, H = 0, dpr = 1, portrait = false, dprCap = small ? 3 : 2;   // phones draw at their full pixel density
     function resize() {
       const r = cv.getBoundingClientRect();
       dpr = Math.min(window.devicePixelRatio || 1, dprCap);
@@ -200,7 +202,9 @@
       const c = clips[ci], n = c.n, f = t * (n - 1), a = Math.floor(f), b = Math.min(n - 1, a + 1);
       let k = f - a;
       if (settle > 0) k = lerp(k, k < 0.5 ? 0 : 1, settle);   // when scrolling pauses, rest on a sharp frame
-      const kx = c.kx || [0.5, 0.5], p0 = lerp(kx[0], kx[1], t), px = portrait ? p0 : 0.5 + (p0 - 0.5) * 0.5;
+      const kx = c.kx || [0.5, 0.5], p0 = lerp(kx[0], kx[1], t);
+      let px = portrait ? p0 : 0.5 + (p0 - 0.5) * 0.5;
+      if (crop) px = (px - crop[0]) / (crop[1] - crop[0]);
       const fa = pick(ci, a), fb = pick(ci, b);
       if (!fa) return null;
       const rc = blit(fa, alpha, px, zoom);

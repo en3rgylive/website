@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Pack footage into the frame files that the page scrubs with the scroll bar.
 
-Input is either one video that is cut at the scene changes, or a folder of clips (01.mp4, 02.mp4 ...).
+Input is one video that is cut at the scene changes, a folder of clips (01.mp4, 02.mp4 ...), or with --frames a
+folder of numbered still frames (for footage that was cleaned or upscaled frame by frame).
 
     python3 tools/pack_clips.py movie.mp4 docs/clips --auto-cuts          # find the cuts by itself
     python3 tools/pack_clips.py movie.mp4 docs/clips --cuts 2.5,4.67      # or give the cut times in seconds
@@ -10,8 +11,8 @@ Input is either one video that is cut at the scene changes, or a folder of clips
 Needs ffmpeg and Pillow. Output, which is what the page loads:
 
     docs/clips/manifest.json         frame counts, sizes, and the scroll, zoom and transition settings per chapter
-    docs/clips/d/01/0001.webp ...    desktop frames (one file per frame)
-    docs/clips/m/01/0001.webp ...    phone frames, smaller
+    docs/clips/d/01/0001.avif ...    desktop frames (one file per frame; AVIF by default, WebP with --dfmt webp)
+    docs/clips/m/01/0001.avif ...    phone frames: the middle of the picture, cropped, at full phone-screen resolution
     docs/clips/p/01/0001.webp ...    tiny preview frames (every 2nd frame), loaded first so scrubbing is smooth from the start
 
 Every source frame is kept by default, so scrubbing is as smooth as the footage. Use --fps to thin it out.
@@ -58,11 +59,17 @@ def auto_cuts(path, fps, threshold):
 
 
 def write_frame(job):
-    src, dst, fw, fh, q = job
+    src, dst, fw, fh, q, fmt, crop, speed = job
     im = Image.open(src).convert('RGB')
+    if crop:                                          # keep only the middle band of the picture (phone sets)
+        w = im.width
+        im = im.crop((round(crop[0] * w), 0, round(crop[1] * w), im.height))
     if im.size != (fw, fh):
         im = im.resize((fw, fh), Image.LANCZOS)
-    im.save(dst, 'WEBP', quality=q, method=5)
+    if fmt == 'avif':
+        im.save(dst, 'AVIF', quality=q, speed=speed)
+    else:
+        im.save(dst, 'WEBP', quality=q, method=5)
     return os.path.getsize(dst)
 
 
@@ -73,17 +80,23 @@ def small(path, w=192):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('src', help='a video file, or a folder with 01.mp4, 02.mp4 ...')
+    ap.add_argument('src', help='a video file, a folder with 01.mp4, 02.mp4 ..., or (with --frames) a folder of numbered frame images')
+    ap.add_argument('--frames', action='store_true', help='src is a folder of frame images in order (png, jpg or webp)')
+    ap.add_argument('--cut-frames', default='', help='with --frames: frame numbers where a new chapter starts, e.g. 60,112,168')
+    ap.add_argument('--src-fps', type=float, default=23.976, help='with --frames: frame rate of the footage (default 23.976)')
     ap.add_argument('out', help='output folder, normally docs/clips/')
     ap.add_argument('--cuts', default='', help='cut times in seconds for a single video, e.g. 2.5,4.67,7.0')
     ap.add_argument('--auto-cuts', nargs='?', const=0.22, type=float, default=None, help='find the cuts automatically (optional scene threshold, default 0.22)')
     ap.add_argument('--fps', type=float, default=0, help='frames kept per second; 0 keeps every frame (default)')
-    ap.add_argument('--dw', type=int, default=1920, help='desktop frame width (default 1920)')
-    ap.add_argument('--mw', type=int, default=1280, help='phone frame width (default 1280)')
+    ap.add_argument('--dw', type=int, default=2560, help='desktop frame width (default 2560)')
+    ap.add_argument('--mh', type=int, default=1080, help='phone frame height; the width follows from --mcrop (default 1080)')
+    ap.add_argument('--mcrop', default='0.15:0.85', help='the band of the picture kept for phones, as start:end of the width (default 0.15:0.85)')
+    ap.add_argument('--dfmt', default='avif', choices=['avif', 'webp'], help='format of the desktop and phone frames (default avif)')
+    ap.add_argument('--speed', type=int, default=6, help='AVIF encoder speed, 0 slowest to 10 fastest (default 6)')
     ap.add_argument('--pw', type=int, default=560, help='preview frame width (default 560)')
     ap.add_argument('--pstep', type=int, default=2, help='keep every Nth frame in the preview set (default 2)')
-    ap.add_argument('--q', type=int, default=76, help='WebP quality, desktop (default 76)')
-    ap.add_argument('--mq', type=int, default=70, help='WebP quality, phone (default 70)')
+    ap.add_argument('--q', type=int, default=52, help='desktop quality (AVIF default 52; use about 80 for WebP)')
+    ap.add_argument('--mq', type=int, default=52, help='phone quality (AVIF default 52; use about 76 for WebP)')
     ap.add_argument('--pq', type=int, default=50, help='WebP quality, preview (default 50)')
     ap.add_argument('--hold', default='0.2,0.08', help='share of each chapter that holds its first and last frame (default 0.2,0.08)')
     ap.add_argument('--seam', type=float, default=0.14, help='half-width of the push through light over a hard cut, in chapters (default 0.14)')
@@ -105,7 +118,22 @@ def main():
     tmp_root = tempfile.mkdtemp(prefix='pack_')
     chapters = []
     try:
-        if os.path.isdir(a.src):
+        if a.frames:
+            allf = sorted(f for f in glob.glob(os.path.join(a.src, '*')) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')))
+            if not allf:
+                sys.exit('no frames found in ' + a.src)
+            src_fps = a.src_fps
+            if a.cut_frames:
+                cut_frames = [int(x) for x in a.cut_frames.split(',') if x.strip()]
+            elif a.cuts:
+                cut_frames = [round(float(t) * src_fps) for t in a.cuts.split(',') if t.strip()]
+            else:
+                cut_frames = []
+            edges = [0] + [c for c in cut_frames if 0 < c < len(allf)] + [len(allf)]
+            for i in range(len(edges) - 1):
+                chapters.append(allf[edges[i]:edges[i + 1]])
+            print('frames:', len(allf), 'cuts at', edges[1:-1])
+        elif os.path.isdir(a.src):
             files = sorted(f for f in glob.glob(os.path.join(a.src, '*')) if f.lower().endswith(('.mp4', '.mov', '.webm', '.mkv')))
             if not files:
                 sys.exit('no clips found in ' + a.src)
@@ -147,16 +175,22 @@ def main():
             if os.path.exists(p):
                 os.remove(p)
 
-        dw, dh = Image.open(chapters[0][0]).size
-        dh -= dh % 2
-        sizes = {'d': (dw, dh), 'm': (a.mw, round(dh * a.mw / dw) // 2 * 2), 'p': (a.pw, round(dh * a.pw / dw) // 2 * 2)}
+        sw, sh = Image.open(chapters[0][0]).size
+        dw = a.dw if a.dw < sw else sw
+        dh = round(sh * dw / sw) // 2 * 2
+        c0, c1 = [float(x) for x in a.mcrop.split(':')]
+        mh = a.mh // 2 * 2
+        mw = round((c1 - c0) * sw * mh / sh) // 2 * 2
+        sizes = {'d': (dw, dh), 'm': (mw, mh), 'p': (a.pw, round(dh * a.pw / dw) // 2 * 2)}
         qual = {'d': a.q, 'm': a.mq, 'p': a.pq}
+        fmts = {'d': a.dfmt, 'm': a.dfmt, 'p': 'webp'}
         durs = [len(c) / (a.fps or src_fps or 24.0) for c in chapters]
         mean = sum(durs) / K
         weights = [round((d / mean) ** a.weight_power, 3) for d in durs]
 
-        manifest = {'version': 3, 'ext': 'webp', 'fps': round(a.fps or src_fps or 24.0, 3), 'drift': a.drift, 'pstep': a.pstep,
-                    'd': dict(zip('wh', sizes['d'])), 'm': dict(zip('wh', sizes['m'])), 'p': dict(zip('wh', sizes['p'])), 'clips': [], 'cuts': []}
+        manifest = {'version': 4, 'fps': round(a.fps or src_fps or 24.0, 3), 'drift': a.drift, 'pstep': a.pstep,
+                    'd': dict(zip('wh', sizes['d']), ext=fmts['d']), 'm': dict(zip('wh', sizes['m']), ext=fmts['m'], crop=[c0, c1]),
+                    'p': dict(zip('wh', sizes['p']), ext='webp'), 'clips': [], 'cuts': []}
         pool = ProcessPoolExecutor(max_workers=max(1, os.cpu_count() or 2))
         total = {'d': 0, 'm': 0, 'p': 0}
         for ci, frames in enumerate(chapters):
@@ -168,8 +202,9 @@ def main():
                 os.makedirs(d, exist_ok=True)
                 fw, fh = sizes[sub]
                 keep = (lambda k: k % a.pstep == 0 or k == n - 1) if sub == 'p' else (lambda k: True)
-                jobs += [(src, os.path.join(d, '%04d.webp' % (k + 1)), fw, fh, qual[sub]) for k, src in enumerate(frames) if keep(k)]
-            out = list(pool.map(write_frame, jobs, chunksize=8))
+                crop = (c0, c1) if sub == 'm' else None
+                jobs += [(src, os.path.join(d, '%04d.%s' % (k + 1, fmts[sub])), fw, fh, qual[sub], fmts[sub], crop, a.speed) for k, src in enumerate(frames) if keep(k)]
+            out = list(pool.map(write_frame, jobs, chunksize=4))
             npv = sum(1 for k in range(n) if k % a.pstep == 0 or k == n - 1)
             ds, ms, ps = sum(out[:n]), sum(out[n:2 * n]), sum(out[2 * n:])
             total['d'] += ds; total['m'] += ms; total['p'] += ps

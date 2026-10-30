@@ -74,6 +74,16 @@ h1, h2, h3 { font-family: var(--f-display); font-weight: 300; letter-spacing: -0
   content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
   background: linear-gradient(180deg, rgba(3, 4, 10, 0.55) 0%, rgba(3, 4, 10, 0) 140px), linear-gradient(0deg, rgba(3, 4, 10, 0.78) 0%, rgba(3, 4, 10, 0) 44%), radial-gradient(120% 90% at 50% 42%, transparent 58%, rgba(3, 4, 10, 0.5) 100%), radial-gradient(55% 50% at 14% 86%, rgba(3, 4, 10, 0.5), transparent 75%);
 }
+/* film grain on desktop screens: a fine, slowly shifting noise over the picture; it hides compression and reads as extra sharpness */
+@media (hover: hover) and (pointer: fine) {
+.film-stick::after {
+  content: ""; position: absolute; inset: -60px; z-index: 2; pointer-events: none; opacity: 0.075; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='table' tableValues='1 1'/></feComponentTransfer></filter><rect width='220' height='220' filter='url(%23n)'/></svg>");
+  animation: grain 0.8s steps(5) infinite; will-change: transform;
+}
+}
+@keyframes grain { 0% { transform: translate(0, 0); } 20% { transform: translate(-30px, 18px); } 40% { transform: translate(22px, -26px); } 60% { transform: translate(-16px, -40px); } 80% { transform: translate(34px, 24px); } 100% { transform: translate(0, 0); } }
+@media (prefers-reduced-motion: reduce) { .film-stick::after { animation: none; } }
 .caps { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .cap {
   position: absolute; left: var(--gl); right: var(--gr); bottom: clamp(92px, 14svh, 150px); max-width: 720px;
