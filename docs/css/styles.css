@@ -222,15 +222,25 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius
   .reach { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .film { height: 860vh; }
   .film-bar { display: none; }
-  #stage { height: 58svh; -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent); mask-image: linear-gradient(180deg, #000 82%, transparent); }
+  #stage { height: 58svh; }                                /* its bottom edge fades inside the canvas (reel.js), not with a CSS mask */
   .film-stick::before { background: linear-gradient(180deg, rgba(3, 4, 10, 0.5) 0%, rgba(3, 4, 10, 0) 110px); }
   .cap { bottom: clamp(84px, 12svh, 120px); }
   .cap h1, .cap h2 { font-size: clamp(1.9rem, 8vw, 2.6rem); }
   .counter { left: var(--gl); right: auto; bottom: 22px; }
-  .cue { display: none; }
+  .counter em { display: none; }                            /* the caption already names the chapter, and the button needs the room */
+  .cue { bottom: 18px; }
   .shot figcaption { flex-direction: column; gap: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+/* ---------- touch screens ---------- */
+@media (pointer: coarse) {
+  .film-cta { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(8, 9, 14, 0.86); }   /* a live blur over a moving canvas is the costliest thing on a phone */
+  .top.solid { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(6, 7, 11, 0.94); }
+  html[data-snap="on"] { scroll-snap-type: y mandatory; }
+  .snaps { position: absolute; inset: 0 auto 0 0; width: 1px; pointer-events: none; visibility: hidden; }
+  .snaps i { position: absolute; left: 0; width: 1px; height: 1px; scroll-snap-align: start; scroll-snap-stop: always; }
 }

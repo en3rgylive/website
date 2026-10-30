@@ -6,7 +6,9 @@
    - the scroll value is eased, so a mouse wheel and a trackpad both feel the same.
    Each chapter holds its first frame while the caption is read and drifts in slowly so the picture never looks frozen.
    A hard cut between scenes becomes a push through light: the old scene pushes in and blooms, the new one settles out of it.
-   The landing screen is just a small, clean sun; scrolling reveals the ray, the stars and the corona outward from it. */
+   The landing screen is just a small, clean sun; scrolling reveals the ray, the stars and the corona outward from it.
+   On phones the motion is calmer and lighter (less drift and push, no zoom blur, fewer decoded frames), and on touch screens
+   native scroll snapping makes one swipe move one chapter. */
 (function () {
   'use strict';
 
@@ -35,7 +37,8 @@
     const small = coarse || Math.min(screen.width || 1200, screen.height || 800) < 700;
     const extOf = (set) => (set && set.ext) || M.ext || 'webp';
     const hasP = !!(M.p && clips[0].pdir), pstep = M.pstep || 1;
-    const DRIFT = reduce ? 0 : (M.drift != null ? M.drift : 0.05);
+    const CALM = small ? 0.6 : 1;                            // phones get a gentler camera: less drift, a softer push through each cut
+    const DRIFT = reduce ? 0 : (M.drift != null ? M.drift : 0.05) * CALM;
     const EASE = reduce ? 0 : 0.35;                          // a little easing on the footage inside each chapter
     const PRE = 0.02, POST = 0.04;                           // scroll held on the very first and very last frame
     const BG = '#03040a';
@@ -62,8 +65,12 @@
     const IN = M.intro || null;                               // the clean sun for the landing screen
     let introBmp = null, introFail = false;
     const t0 = performance.now();
-    const W_FULL = small ? { ahead: 16, behind: 6 } : { ahead: 14, behind: 5 };    // how many full frames stay decoded
+    const SNAPPY = coarse && K > 1;                           // touch screens: a swipe jumps a whole chapter, so frames are kept ready at the neighbouring stops instead
+    const W_FULL = SNAPPY ? { ahead: 5, behind: 2 } : small ? { ahead: 11, behind: 4 } : { ahead: 14, behind: 5 };   // how many full frames stay decoded (a phone frame is ~8 MB decoded)
+    const SLACK = SNAPPY ? 2 : 6;                            // decoded frames kept beyond the window before they are freed
+    let pins = [];                                            // frames to fetch and keep decoded: the resting frames of the stops either side of the playhead
     const W_PREV = { ahead: 100, behind: 60 };
+    let fastMove = false;                                     // phones: while the playhead flies past, only previews are drawn and no new full frames are decoded
     let head = 0, dirSign = 1, dirty = true, firstOk = false, pDone = 0, fPend = 0, pPend = 0, fDecPend = 0, pDecPend = 0, nextP = 0, gen = 0;
     const pOrder = [];
     clips.forEach((c, ci) => { pOrder.push(first[ci]); pOrder.push(first[ci] + c.n - 1); });
@@ -90,6 +97,19 @@
       const cover = Math.max(cv.width / natW, cv.height / natH);
       return cover < 0.85 ? { w: Math.ceil(natW * cover * 1.05), h: Math.ceil(natH * cover * 1.05) } : null;
     }
+    function pumpPrev() {
+      const pl = head - W_PREV.behind, ph = head + W_PREV.ahead;
+      for (let d = 0; d <= 100 && pDecPend < 4; d++) {
+        for (let s = 0; s < (d ? 2 : 1) && pDecPend < 4; s++) {
+          const g = s ? head - d : head + d;
+          if (g < pl || g > ph || g < 0 || g >= N || pDec[g] || !pBlob[g]) continue;
+          pDec[g] = 1; pDecPend++;
+          decodeBlob(pBlob[g]).then((b) => { if (pDec[g] === 1) { pBmp[g] = b; pDec[g] = 2; dirty = true; if (g === 0) firstOk = true; } else closeBmp(b); }, () => { pDec[g] = 3; })
+            .then(() => { pDecPend--; });
+        }
+      }
+      for (let g = 0; g < N; g++) if (pBmp[g] && (g < pl - 20 || g > ph + 20)) { closeBmp(pBmp[g]); pBmp[g] = null; pDec[g] = 0; }
+    }
     function pump() {
       // 1. previews: everything, key frames first
       while (hasP && pPend < 8 && nextP < pOrder.length) {
@@ -101,6 +121,12 @@
       }
       // 2. full frames: nearest to the playhead first, looking ahead in the scroll direction
       const gate = !hasP || pDone >= pTotal * 0.9;
+      const fetchFull = (g) => {
+        fFet[g] = 1; fPend++;
+        blobOf(fUrl(g)).then((b) => { fBlob[g] = b; fFet[g] = 2; }, () => { fFet[g] = 3; if (g === 0 && !hasP) fail(); })
+          .then(() => { fPend--; dirty = true; });
+      };
+      if (gate) for (const g of pins) if (fPend < 4 && !fFet[g]) fetchFull(g);
       while (fPend < 4) {
         let best = -1, bd = 1e9;
         for (let g = 0; g < N; g++) {
@@ -111,48 +137,40 @@
           if (dd < bd) { bd = dd; best = g; }
         }
         if (best < 0) break;
-        const g = best; fFet[g] = 1; fPend++;
-        blobOf(fUrl(g)).then((b) => { fBlob[g] = b; fFet[g] = 2; }, () => { fFet[g] = 3; if (g === 0 && !hasP) fail(); })
-          .then(() => { fPend--; dirty = true; });
+        fetchFull(best);
       }
       // 3. decode windows
+      if (fastMove) { if (hasP) pumpPrev(); return; }
       const wf = dirSign >= 0 ? W_FULL : { ahead: W_FULL.behind, behind: W_FULL.ahead };
       const lo = head - wf.behind, hi = head + wf.ahead;
       const reach = Math.max(wf.ahead, wf.behind);
+      const decFull = (g) => {
+        fDec[g] = 1; fDecPend++;
+        decodeBlob(fBlob[g], bmpSize).then((b) => { if (fDec[g] === 1) { fBmp[g] = b; fDec[g] = 2; dirty = true; } else closeBmp(b); }, () => { fDec[g] = 3; })
+          .then(() => { fDecPend--; });
+      };
       for (let d = 0; d <= reach && fDecPend < 3; d++) {
         for (let s = 0; s < (d ? 2 : 1) && fDecPend < 3; s++) {
           const g = s ? head - d : head + d;
           if (g < lo || g > hi || g < 0 || g >= N || fDec[g] || !fBlob[g]) continue;
-          fDec[g] = 1; fDecPend++;
-          decodeBlob(fBlob[g], bmpSize).then((b) => { if (fDec[g] === 1) { fBmp[g] = b; fDec[g] = 2; dirty = true; } else closeBmp(b); }, () => { fDec[g] = 3; })
-            .then(() => { fDecPend--; });
+          decFull(g);
         }
       }
-      for (let g = 0; g < N; g++) if (fBmp[g] && (g < lo - 6 || g > hi + 6)) { closeBmp(fBmp[g]); fBmp[g] = null; fDec[g] = 0; }
-      if (hasP) {
-        const pl = head - W_PREV.behind, ph = head + W_PREV.ahead;
-        for (let d = 0; d <= 100 && pDecPend < 4; d++) {
-          for (let s = 0; s < (d ? 2 : 1) && pDecPend < 4; s++) {
-            const g = s ? head - d : head + d;
-            if (g < pl || g > ph || g < 0 || g >= N || pDec[g] || !pBlob[g]) continue;
-            pDec[g] = 1; pDecPend++;
-            decodeBlob(pBlob[g]).then((b) => { if (pDec[g] === 1) { pBmp[g] = b; pDec[g] = 2; dirty = true; if (g === 0) firstOk = true; } else closeBmp(b); }, () => { pDec[g] = 3; })
-              .then(() => { pDecPend--; });
-          }
-        }
-        for (let g = 0; g < N; g++) if (pBmp[g] && (g < pl - 20 || g > ph + 20)) { closeBmp(pBmp[g]); pBmp[g] = null; pDec[g] = 0; }
-      }
+      for (const g of pins) if (fDecPend < 3 && !fDec[g] && fBlob[g]) decFull(g);
+      for (let g = 0; g < N; g++) if (fBmp[g] && (g < lo - SLACK || g > hi + SLACK) && pins.indexOf(g) < 0) { closeBmp(fBmp[g]); fBmp[g] = null; fDec[g] = 0; }
+      if (hasP) pumpPrev();
       if (!firstOk && fBmp[0]) firstOk = true;
     }
 
     /* ---------- sizing ---------- */
-    let W = 0, H = 0, dpr = 1, portrait = false, dprCap = small ? 3 : 2;   // phones draw at their full pixel density
+    let W = 0, H = 0, dpr = 1, portrait = false, shortCv = false, dprCap = small ? 3 : 2;   // phones draw at their full pixel density
     function resize() {
       const r = cv.getBoundingClientRect();
       dpr = Math.min(window.devicePixelRatio || 1, dprCap);
       W = Math.max(2, Math.round(r.width)); H = Math.max(2, Math.round(r.height));
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
       portrait = W / H < 1.0;
+      shortCv = H < (stick.clientHeight || H) - 4;            // the picture ends above the bottom of the screen (phones): it fades out inside the canvas
       stick.classList.toggle('portrait', portrait);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       const nat = M[small ? 'm' : 'd'], want = sizeFor(nat.w, nat.h);
@@ -235,7 +253,7 @@
       return rc;
     }
     function streak(ci, t, alpha, settle, zoom, amount) {      // a little zoom blur while the picture pushes through a cut
-      if (amount < 0.01 || reduce) return layer(ci, t, alpha, settle, zoom);
+      if (amount < 0.01 || reduce || small) return layer(ci, t, alpha, settle, zoom);   // no zoom blur on phones: three layers per side is a lot of fill
       let rc = null;
       for (let j = 0; j < 3; j++) {
         const r2 = layer(ci, t, j === 0 ? alpha : alpha / (j + 1), settle, zoom * (1 + amount * j * 0.5));
@@ -305,7 +323,7 @@
       flash = 0;
       let rc = null;
       if (b > 0 && Math.abs(q - b) < seam) {
-        const u = (q - b) / seam, push = reduce ? 0 : (clips[b].push != null ? clips[b].push : 0.12);
+        const u = (q - b) / seam, push = reduce ? 0 : (clips[b].push != null ? clips[b].push : 0.12) * CALM;
         const t = smooth(clamp((u + 0.25) / 0.5, 0, 1));      // the new scene takes over quickly, in the middle of the bloom
         const pk = 1 - Math.abs(u);                           // 1 right at the cut
         const glow = Math.exp(-Math.pow(u / 0.5, 2));         // the bloom peaks exactly at the swap
@@ -328,6 +346,11 @@
         ctx.fillStyle = '#ffd9a0'; ctx.fillRect(0, 0, cv.width, cv.height);
       }
       ctx.globalAlpha = 1;
+      if (shortCv) {                                          // soft bottom edge drawn into the canvas (a CSS mask over a moving canvas costs more on a phone)
+        const g = ctx.createLinearGradient(0, cv.height * 0.8, 0, cv.height);
+        g.addColorStop(0, 'rgba(3,4,10,0)'); g.addColorStop(1, 'rgba(3,4,10,1)');
+        ctx.fillStyle = g; ctx.fillRect(0, cv.height * 0.8, cv.width, cv.height * 0.2 + 1);
+      }
     }
 
     /* ---------- captions, counter, progress, call to action ---------- */
@@ -336,16 +359,19 @@
     const NAMES = capEls.map((el) => { const k = $('.k', el); return k ? k.textContent : ''; });
     if (cTot) cTot.textContent = '/ ' + String(K).padStart(2, '0');
     let lastIdx = -1;
+    const RISE = small ? 14 : 24, LEAVE = small ? 10 : 16;     // captions only fade and rise a little; nothing scales
+    const capSt = capEls.map(() => ({ o: '', t: '', vis: '', inert: null }));
     function ui(i, r, P) {
       const q = i + r;
-      capEls.forEach((el) => {
-        const k = +el.dataset.i;
+      capEls.forEach((el, n) => {
+        const k = +el.dataset.i, st = capSt[n];
         const inK = k === 0 ? 1 : sstep(k + 0.1, k + 0.24, q), outK = k >= K - 1 ? 1 : 1 - sstep(k + 0.78, k + 0.9, q);
         const v = inK * outK;
-        el.style.opacity = v.toFixed(3);
-        el.style.transform = 'translate3d(0,' + ((1 - inK) * 24 - (1 - outK) * 16).toFixed(1) + 'px,0)';
-        el.style.visibility = v > 0.01 ? 'visible' : 'hidden';
-        el.toggleAttribute('inert', v < 0.5);
+        const o = v.toFixed(3), t = 'translate3d(0,' + ((1 - inK) * RISE - (1 - outK) * LEAVE).toFixed(1) + 'px,0)', vis = v > 0.01 ? 'visible' : 'hidden', inert = v < 0.5;
+        if (o !== st.o) { el.style.opacity = o; st.o = o; }
+        if (t !== st.t) { el.style.transform = t; st.t = t; }
+        if (vis !== st.vis) { el.style.visibility = vis; st.vis = vis; }
+        if (inert !== st.inert) { el.toggleAttribute('inert', inert); st.inert = inert; }
       });
       if (barEl) barEl.style.transform = 'scaleY(' + P.toFixed(4) + ')';
       if (cueEl) cueEl.style.opacity = (1 - sstep(0.0, 0.2, q)).toFixed(3);
@@ -355,14 +381,69 @@
       if (flareEl) flareEl.style.opacity = '0';                // the bloom on the canvas replaces the old flare line
     }
 
+    /* ---------- touch screens: one swipe, one chapter ----------
+       Invisible snap points sit where each chapter's caption is fully shown (and at the very start and end of the film).
+       Native scroll snapping does the rest, so a swipe glides from one chapter to the next and cannot skip one.
+       Snapping is only switched on inside the film, so the rest of the page scrolls freely. */
+    const html = document.documentElement;
+    const snapBox = document.createElement('div');
+    snapBox.className = 'snaps'; snapBox.setAttribute('aria-hidden', 'true');
+    let stopQ = [];                                           // where the stops are, as a position in the film (0 to K) or 'end'
+    let stopY = [], snapOn = false, snapLock = false, snapTimer = 0;
+    function pOf(q) {                                         // chapter position -> scroll progress, the inverse of locate()
+      const i = Math.min(Math.floor(q), K - 1), r = q - i;
+      return PRE + ((cum[i] + r * wts[i]) / wsum) * (1 - PRE - POST);
+    }
+    function placeStops() {
+      const span = filmEl.offsetHeight - (stick.clientHeight || window.innerHeight);
+      const top = filmEl.getBoundingClientRect().top + window.scrollY;
+      stopY = stopQ.map((q, n) => { const y = Math.round(q === 'end' ? span : q === 0 ? 0 : pOf(q) * span); snapBox.children[n].style.top = y + 'px'; return top + y; });
+    }
+    function setSnap(on) { if (on !== snapOn) { snapOn = on; html.setAttribute('data-snap', on ? 'on' : 'off'); } }
+    function snapCheck() { setSnap(!snapLock && window.scrollY < stopY[stopY.length - 1] - 3); }
+    function snapIdle() { clearTimeout(snapTimer); snapTimer = setTimeout(() => { snapLock = false; snapCheck(); }, snapLock ? 450 : 140); }   // a jump to a link keeps snapping off until it has arrived
+    let stopF = [], pinAt = -2;                               // the frame each stop rests on, and which stop the playhead is nearest to
+    function updatePins() {
+      let n = 0, bd = 1e9;
+      stopF.forEach((g, i) => { const d = Math.abs(g - head); if (d < bd) { bd = d; n = i; } });
+      if (n === pinAt) return;
+      pinAt = n; pins = [];
+      [n + 1, n - 1].forEach((i) => { if (i >= 0 && i < stopF.length) for (let d = -2; d <= 2; d++) { const g = stopF[i] + d; if (g >= 0 && g < N) pins.push(g); } });
+    }
+    if (coarse && K > 1) {
+      stopQ = [0]; for (let k = 0; k < K; k++) stopQ.push(k + 0.55); stopQ.push('end');
+      stopF = stopQ.map((q) => { if (q === 'end') return N - 1; const ci = Math.floor(q), r = q - ci; return first[ci] + Math.round(playT(ci, r) * (clips[ci].n - 1)); });
+      stopQ.forEach(() => snapBox.appendChild(document.createElement('i')));
+      filmEl.appendChild(snapBox);
+      placeStops();
+      window.addEventListener('resize', () => { placeStops(); snapCheck(); });
+      window.addEventListener('load', () => { placeStops(); snapCheck(); });
+      window.addEventListener('scroll', snapIdle, { passive: true });
+      let tY = 0, tDir = 0;
+      window.addEventListener('touchstart', (e) => { tY = e.touches[0].clientY; tDir = 0; snapLock = false; snapCheck(); }, { passive: true });   // touching the screen ends a jump
+      window.addEventListener('touchmove', (e) => {           // at the end of the film a swipe up goes back to the last chapter, a swipe down carries on with the page
+        if (tDir) return;
+        const dy = e.touches[0].clientY - tY;
+        if (Math.abs(dy) < 8) return;
+        tDir = dy > 0 ? -1 : 1;
+        if (tDir < 0 && !snapLock && window.scrollY <= stopY[stopY.length - 1] + 4) setSnap(true);
+      }, { passive: true });
+      document.addEventListener('click', (e) => {              // a link that jumps somewhere else on the page must not be pulled back to a chapter
+        const a = e.target.closest && e.target.closest('a[href^="#"]');
+        if (a && a.getAttribute('href').length > 1) { snapLock = true; setSnap(false); snapIdle(); }
+      });
+      snapCheck();
+    }
+
     /* ---------- loop ---------- */
     let forced = null;
-    window.HNreel = { set: (p) => { forced = p; }, info: () => ({ chapters: K, frames: N, previews: pDone, decoded: fBmp.reduce((a, b) => a + (b ? 1 : 0), 0), fetched: fFet.reduce((a, s) => a + (s === 2 ? 1 : 0), 0), small }) };
+    window.HNreel = { set: (p) => { forced = p; }, info: () => ({ chapters: K, frames: N, previews: pDone, decoded: fBmp.reduce((a, b) => a + (b ? 1 : 0), 0), fetched: fFet.reduce((a, s) => a + (s === 2 ? 1 : 0), 0), small, snap: snapOn, stops: stopY.slice(), pins: pins.slice(), headSharp: !!fBmp[head], head, stopF: stopF.slice(), decodedIdx: fBmp.map((b, i) => b ? i : -1).filter((i) => i >= 0) }) };
     function readProgress() {
       const r = filmEl.getBoundingClientRect();
       const span = r.height - (stick.clientHeight || window.innerHeight);
       return span > 0 ? clamp(-r.top / span, 0, 1) : 0;
     }
+    let speed = 0;                                            // progress per second, smoothed
     let ps = 0, first0 = true, last = performance.now(), lastMove = 0, lastTarget = -1, lastSettle = -1, lastP = -1, ema = 16, moving = 0;
     function frame(now) {
       requestAnimationFrame(frame);
@@ -372,6 +453,9 @@
       ps = first0 || reduce ? target : lerp(ps, target, 1 - Math.exp(-dt * 9));
       if (Math.abs(ps - target) < 0.00004) ps = target;
       first0 = false;
+      speed = lerp(speed, dt > 0 ? Math.abs(ps - prev) / dt : 0, 0.3);
+      fastMove = small && speed > 0.1;
+      if (SNAPPY && !fastMove) updatePins();
       if (Math.abs(ps - prev) > 1e-6) dirSign = ps > prev ? 1 : -1;
       if (Math.abs(target - lastTarget) > 0.00002 || Math.abs(ps - target) > 0.0004) { lastMove = now; lastTarget = target; }
       const settle = reduce ? 1 : smooth(clamp((now - lastMove) / 1000 - 0.12, 0, 0.3) / 0.3);
@@ -386,7 +470,7 @@
       ui(L.i, L.r, ps);
       if (onScreen && Math.abs(ps - prev) > 1e-6) {          // on a slow device, trade resolution for smoothness while scrolling
         ema = lerp(ema, dt * 1000, 0.08);
-        if (++moving % 90 === 0 && ema > 32 && dprCap > 1 && (window.devicePixelRatio || 1) > 1) { dprCap = Math.max(1, dprCap - 0.25); resize(); }
+        if (++moving % 60 === 0 && ema > 30 && dprCap > 1 && (window.devicePixelRatio || 1) > 1) { dprCap = Math.max(1, dprCap - 0.5); resize(); }
       }
     }
 
