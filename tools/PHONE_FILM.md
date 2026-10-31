@@ -62,7 +62,7 @@ in `docs/index.html` are shared.
 ## 4. The opening sun (optional)
 
 The main film opens on a lone small sun that the ray, stars and corona grow out of (the `intro` block in `docs/clips/manifest.json`).
-To do the same on phones, cut the sun out of the first frame of the vertical clip with `tools/make_intro.py`, save it as
+To do the same on phones, cut the sun out of the first frame of the vertical clip with `tools/make_intro.py` (when the whole sun is in the frame) or `tools/make_intro_partial.py` (when the frame cuts the sun off, as in the current phone film; it builds the missing part and adds a `box` to the numbers it prints), save it as
 `docs/clips-m/sun.webp`, and add an `intro` block to `docs/clips-m/manifest.json` with the numbers the tool prints (copy the block
 from `docs/clips/manifest.json` and change `img`, `cx`, `cy`, `r`, `w`, `h`; set `target` to where the sun should sit, for example
 `[0.5, 0.3]`, and `zoom` to how small it starts). Without an `intro` block the first chapter simply opens on its first frame.

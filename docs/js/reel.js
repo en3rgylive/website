@@ -222,8 +222,7 @@
     }
     const dimW = (b) => b.width || b.naturalWidth, dimH = (b) => b.height || b.naturalHeight;
     let g2 = ctx;                                             // where blit draws: the canvas, or the off-screen layer while a reveal is built
-    function blit(im, alpha, px, zoom, anchor) {
-      const iw = dimW(im), ih = dimH(im);
+    function rectOf(iw, ih, px, zoom, anchor) {                // where a picture of this size lands on the canvas
       const s = Math.max(cv.width / iw, cv.height / ih) * zoom;
       const w = iw * s, h = ih * s;
       let x = w >= cv.width ? clamp(cv.width / 2 - px * w, cv.width - w, 0) : (cv.width - w) / 2;   // portrait: slide the crop along the picture
@@ -232,9 +231,13 @@
         x = lerp(x, anchor.tx * cv.width - anchor.fx * w, anchor.k);
         y = lerp(y, anchor.ty * cv.height - anchor.fy * h, anchor.k);
       }
-      g2.globalAlpha = alpha;
-      g2.drawImage(im, x, y, w, h);
       return { x, y, w, h };
+    }
+    function blit(im, alpha, px, zoom, anchor) {
+      const rc = rectOf(dimW(im), dimH(im), px, zoom, anchor);
+      g2.globalAlpha = alpha;
+      g2.drawImage(im, rc.x, rc.y, rc.w, rc.h);
+      return rc;
     }
     function playT(ci, r) {                                   // chapter progress -> footage progress, with the holds
       const hold = clips[ci].hold || [0.2, 0.08];
@@ -284,7 +287,7 @@
       }
       return rc;
     }
-    function feather(rc) {                                    // a zoomed-out picture melts into the page instead of ending in a hard edge
+    function feather(rc, noRight) {                           // a zoomed-out picture melts into the page instead of ending in a hard edge (noRight: the sun carries on past the right edge)
       const f = Math.round(0.16 * Math.min(rc.w, rc.h)), x1 = rc.x + rc.w, y1 = rc.y + rc.h;
       ctx.globalAlpha = 1;
       const edge = (x0, y0, x2, y2, rx, ry, rw, rh) => {
@@ -292,7 +295,7 @@
         g.addColorStop(0, BG); g.addColorStop(1, 'rgba(3,4,10,0)');
         ctx.fillStyle = g; ctx.fillRect(rx, ry, rw, rh);
       };
-      if (rc.x > 1) { edge(rc.x, 0, rc.x + f, 0, rc.x, rc.y, f, rc.h); edge(x1, 0, x1 - f, 0, x1 - f, rc.y, f + 1, rc.h); }
+      if (rc.x > 1) { edge(rc.x, 0, rc.x + f, 0, rc.x, rc.y, f, rc.h); if (!noRight) edge(x1, 0, x1 - f, 0, x1 - f, rc.y, f + 1, rc.h); }
       if (rc.y > 1) { edge(0, rc.y, 0, rc.y + f, rc.x, rc.y, rc.w, f); edge(0, y1, 0, y1 - f, rc.x, y1 - f, rc.w, f + 1); }
     }
     function bloom(a) {                                       // warm light blooming from the middle of the picture
@@ -317,7 +320,12 @@
     function reveal(i, r, settle, t, z, an) {                  // landing: the clean sun, then the footage revealed outward from it
       const rv = revealOf(r);
       const px = pxAt(clips[0], t);
-      const rcS = blit(introBmp, 1, px, z, an);
+      let rcS;
+      if (IN.box) {                                           // the sun picture is bigger than the film frame (the sun is cut off by the frame's edge): draw it against the frame's own rectangle
+        rcS = rectOf(IN.w, IN.h, px, z, an);
+        ctx.globalAlpha = 1;
+        ctx.drawImage(introBmp, rcS.x + IN.box[0] * rcS.w, rcS.y + IN.box[1] * rcS.h, IN.box[2] * rcS.w, IN.box[3] * rcS.h);
+      } else rcS = blit(introBmp, 1, px, z, an);
       if (rv > 0.002) {
         if (off.width !== cv.width || off.height !== cv.height) { off.width = cv.width; off.height = cv.height; }
         octx.globalCompositeOperation = 'source-over'; octx.clearRect(0, 0, off.width, off.height);
@@ -330,6 +338,11 @@
         const gr = octx.createRadialGradient(sx, sy, Math.max(0, R - F), sx, sy, Math.max(1, R));
         gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
         octx.globalCompositeOperation = 'destination-in'; octx.fillStyle = gr; octx.fillRect(0, 0, off.width, off.height);
+        if (IN.box) {                                         // the picture ends at the frame's right edge but the sun carries on: let the picture melt into the built-out sun there
+          const xr = rcS.x + rcS.w, gx = octx.createLinearGradient(xr - rcS.w * 0.12, 0, xr - rcS.w * 0.04, 0);
+          gx.addColorStop(0, 'rgba(0,0,0,1)'); gx.addColorStop(1, 'rgba(0,0,0,0)');
+          octx.fillStyle = gx; octx.fillRect(0, 0, off.width, off.height);
+        }
         octx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1; ctx.drawImage(off, 0, 0);
       }
@@ -363,7 +376,7 @@
         if (i === 0 && introOn() && revealOf(r) < 0.999) rc = reveal(i, r, settle, t, z, anchorFor(z));
         else rc = layer(i, t, 1, settle, z, i === 0 && introOn() ? anchorFor(z) : null);
       }
-      if (rc && (rc.x > 1 || rc.y > 1)) feather(rc);
+      if (rc && (rc.x > 1 || rc.y > 1)) feather(rc, !!(IN && IN.box && i === 0 && b < 0));
       if (flash > 0.004) {
         bloom(Math.min(0.9, flash * 1.5 * (reduce ? 0.3 : 1)));
         ctx.globalAlpha = Math.min(0.3, flash * 0.6 * (reduce ? 0.3 : 1));
@@ -388,13 +401,13 @@
     const barEl = $('#filmBar'), cueEl = $('#cue'), ctaEl = $('#filmCta'), cNum = $('#cNum'), cName = $('#cName'), cTot = $('.counter span');
     const NAMES = capEls.map((el) => { const k = $('.k', el); return k ? k.textContent : ''; });
     if (cTot) cTot.textContent = '/ ' + String(K).padStart(2, '0');
-    let lastIdx = -1;
+    let lastIdx = -1, glowV = '';
     const RISE = small ? 14 : 24, LEAVE = small ? 10 : 16;     // captions only fade and rise a little; nothing scales
     const capSt = capEls.map(() => ({ o: '', t: '', vis: '', inert: null }));
     const capV = capEls.map(() => 0), capBand = [];            // how visible each caption is, and where its soft shade sits on the canvas (phones)
     let phoneUI = false, capChanged = false;
     function measureCaps() {                                  // phones: the shade behind each caption is painted into the canvas, in the same pass as the picture
-      phoneUI = window.matchMedia('(max-width: 600px)').matches;
+      phoneUI = false;                                         // the captions are frosted-glass cards now, which show the picture behind them: no painted shade
       if (!phoneUI) return;
       const sr = stick.getBoundingClientRect();
       capEls.forEach((el, n) => { const rc = el.getBoundingClientRect(); capBand[n] = { y: (rc.top + rc.height / 2 - sr.top) * dpr, h: Math.max(rc.height * 1.1, 150) * dpr }; });
@@ -416,6 +429,7 @@
       tickFill.forEach((t, k) => { const v = Math.round(clamp(q - k, 0, 1) * 100) / 100; if (v !== t.v) { t.v = v; t.el.style.transform = 'scaleX(' + v + ')'; } });
       if (barEl) barEl.style.transform = 'scaleY(' + P.toFixed(4) + ')';
       if (cueEl) cueEl.style.opacity = (1 - sstep(0.0, 0.2, q)).toFixed(3);
+      if (IN && IN.box) { const gl = (i === 0 ? 1 - revealOf(r) : 0).toFixed(2); if (gl !== glowV) { glowV = gl; stick.style.setProperty('--landing-glow', gl); } }   // the warm pool behind the landing card fades as the ray appears
       if (ctaEl) ctaEl.classList.toggle('on', q > 0.55);
       const idx = clamp(Math.floor(q + 0.14), 0, K - 1);
       if (idx !== lastIdx) { lastIdx = idx; if (cNum) cNum.textContent = String(idx + 1).padStart(2, '0'); if (cName && NAMES[idx]) cName.textContent = NAMES[idx]; }
