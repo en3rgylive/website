@@ -401,7 +401,7 @@
     const barEl = $('#filmBar'), cueEl = $('#cue'), ctaEl = $('#filmCta'), cNum = $('#cNum'), cName = $('#cName'), cTot = $('.counter span');
     const NAMES = capEls.map((el) => { const k = $('.k', el); return k ? k.textContent : ''; });
     if (cTot) cTot.textContent = '/ ' + String(K).padStart(2, '0');
-    let lastIdx = -1, glowV = '';
+    let lastIdx = -1;
     const RISE = small ? 14 : 24, LEAVE = small ? 10 : 16;     // captions only fade and rise a little; nothing scales
     const capSt = capEls.map(() => ({ o: '', t: '', vis: '', inert: null }));
     const capV = capEls.map(() => 0), capBand = [];            // how visible each caption is, and where its soft shade sits on the canvas (phones)
@@ -429,7 +429,6 @@
       tickFill.forEach((t, k) => { const v = Math.round(clamp(q - k, 0, 1) * 100) / 100; if (v !== t.v) { t.v = v; t.el.style.transform = 'scaleX(' + v + ')'; } });
       if (barEl) barEl.style.transform = 'scaleY(' + P.toFixed(4) + ')';
       if (cueEl) cueEl.style.opacity = (1 - sstep(0.0, 0.2, q)).toFixed(3);
-      if (IN && IN.box) { const gl = (i === 0 ? 1 - revealOf(r) : 0).toFixed(2); if (gl !== glowV) { glowV = gl; stick.style.setProperty('--landing-glow', gl); } }   // the warm pool behind the landing card fades as the ray appears
       if (ctaEl) ctaEl.classList.toggle('on', q > 0.55);
       const idx = clamp(Math.floor(q + 0.14), 0, K - 1);
       if (idx !== lastIdx) { lastIdx = idx; if (cNum) cNum.textContent = String(idx + 1).padStart(2, '0'); if (cName && NAMES[idx]) cName.textContent = NAMES[idx]; }

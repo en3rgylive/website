@@ -92,14 +92,11 @@ h1 em, h2 em, h3 em { font-style: italic; color: var(--gold-2); }
 @keyframes grain { 0% { transform: translate(0, 0); } 20% { transform: translate(-30px, 18px); } 40% { transform: translate(22px, -26px); } 60% { transform: translate(-16px, -40px); } 80% { transform: translate(34px, 24px); } 100% { transform: translate(0, 0); } }
 @media (prefers-reduced-motion: reduce) { .film-stick::after { animation: none; } }
 .caps { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+/* The film carries no words on screen. The captions stay in the page, out of sight, so screen readers and search engines still get them. */
 .cap {
-  position: absolute; left: var(--gl); right: var(--gr); bottom: clamp(92px, 14svh, 150px); max-width: 720px;
-  opacity: 0; visibility: hidden; will-change: transform, opacity; text-shadow: 0 2px 40px rgba(0, 0, 0, 0.6);
+  position: absolute; left: 0; top: 0; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; white-space: nowrap;
+  clip-path: inset(50%); border: 0; opacity: 0; visibility: hidden; pointer-events: none;
 }
-@media (min-width: 1240px) { .cap { left: calc((100% - 1240px) / 2 + var(--gl)); } }
-.cap .k { font: 600 0.7rem/1 var(--f-body); letter-spacing: 0.28em; text-transform: uppercase; color: var(--gold); margin-bottom: 20px; }
-.cap h1, .cap h2 { font-size: clamp(2.5rem, 6vw, 5.2rem); line-height: 1; font-weight: 400; }
-.cap .s { margin-top: 20px; max-width: 30em; color: rgba(243, 239, 231, 0.78); font-size: clamp(1rem, 1.45vw, 1.18rem); }
 .flare { position: absolute; z-index: 2; left: 0; right: 0; top: 50%; height: 0; opacity: 0; pointer-events: none; }
 .flare i {
   position: absolute; left: 0; right: 0; top: -1px; height: 2px; transform-origin: 50% 50%;
@@ -236,18 +233,7 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius
   .film { height: 820vh; }
   .film-bar, .counter { display: none; }
   .film-stick::before { background: linear-gradient(180deg, rgba(3, 4, 10, 0.66) 0%, rgba(3, 4, 10, 0) 150px), linear-gradient(0deg, rgba(3, 4, 10, 0.72) 0%, rgba(3, 4, 10, 0) 30%); }
-  .cap {                                                     /* text-sized and centred between the header and the controls, so each caption stays a small layer */
-    left: max(30px, var(--gl)); right: max(30px, var(--gr)); bottom: auto; top: calc(50% - 33px); translate: 0 -50%; max-width: none;
-    display: flex; flex-direction: column; align-items: center; text-align: center;
-    text-shadow: 0 2px 26px rgba(0, 0, 0, 0.7), 0 1px 3px rgba(0, 0, 0, 0.45);
-  }
-  .cap[data-i="0"] { top: calc(50% + 21svh - 75px); }       /* the sun has the upper half of the first chapter, the words sit below it */
-  .cap .k { display: inline-flex; align-items: center; gap: 14px; margin-bottom: 22px; font-size: 0.68rem; letter-spacing: 0.34em; padding-left: 0.34em; }
-  .cap .k::before, .cap .k::after { content: ""; width: 22px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold)); opacity: 0.7; }
-  .cap .k::after { transform: scaleX(-1); }
-  .cap h1, .cap h2 { font-size: clamp(2.2rem, 10.2vw, 2.9rem); line-height: 1.02; letter-spacing: -0.012em; }
-  .cap .s { margin-top: 20px; max-width: 19.5em; font-size: 0.98rem; line-height: 1.58; color: rgba(243, 239, 231, 0.84); text-wrap: pretty; }
-  @media (max-height: 640px) { .cap[data-i="0"] { top: calc(50% + 17svh - 75px); } .cap .s { font-size: 0.92rem; } .cue { display: none; } }
+  @media (max-height: 640px) { .cue { display: none; } }
   #ticks { display: flex; gap: 7px; position: absolute; z-index: 3; left: 50%; translate: -50% 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 56px); pointer-events: none; }   /* clear of Safari's floating address bar */
   #ticks i { position: relative; width: 22px; height: 2px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); overflow: hidden; }
   #ticks b { position: absolute; inset: 0; background: var(--gold); transform-origin: 0 50%; transform: scaleX(0); }
@@ -291,36 +277,6 @@ input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius
 }
 @media (prefers-reduced-transparency: reduce) {
   .steps li, .bill, .est-out, .form, .reach li { -webkit-backdrop-filter: none; backdrop-filter: none; background: linear-gradient(155deg, rgba(60, 52, 58, 0.92), rgba(24, 20, 26, 0.94)); }
-}
-
-/* the film captions: frosted-glass cards on upright screens (phones and tablets, which play the 9:16 film); the wide film keeps plain words so nothing covers the picture */
-@media (max-aspect-ratio: 4/5) {
-  .cap {
-    isolation: isolate; background: var(--glass); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow);
-    -webkit-backdrop-filter: blur(22px) saturate(1.45); backdrop-filter: blur(22px) saturate(1.45);
-    padding: clamp(26px, 3.4vw, 44px) clamp(24px, 3.6vw, 48px) clamp(28px, 3.6vw, 46px); border-radius: clamp(26px, 3vw, 36px); text-shadow: none; max-width: 640px;
-  }
-  .cap::before {
-    content: ""; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; padding: 1px; pointer-events: none;
-    background: linear-gradient(150deg, rgba(255, 226, 170, 0.7), rgba(255, 226, 170, 0) 34%, rgba(242, 181, 92, 0) 70%, rgba(242, 181, 92, 0.3));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  }
-  .cap .s { color: rgba(243, 239, 231, 0.86); }
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .cap { background: linear-gradient(155deg, rgba(60, 52, 58, 0.9), rgba(24, 20, 26, 0.92)); } }
-  @media (prefers-reduced-transparency: reduce) { .cap { -webkit-backdrop-filter: none; backdrop-filter: none; background: linear-gradient(155deg, rgba(60, 52, 58, 0.92), rgba(24, 20, 26, 0.94)); } }
-  /* a soft pool of warm light behind the first card, so the glass has something to refract on the black landing */
-  .film-stick .caps::before {
-    content: ""; position: absolute; left: 50%; top: 58%; width: 120vmin; height: 90vmin; translate: -50% -50%; pointer-events: none;
-    background: radial-gradient(closest-side, rgba(255, 150, 60, 0.20), rgba(255, 120, 40, 0.07) 55%, transparent 100%); opacity: var(--landing-glow, 0);
-  }
-}
-@media (max-width: 600px) and (max-aspect-ratio: 4/5) {
-  .cap { padding: 26px 22px 28px; border-radius: 30px; }
-  .cap .k { margin-bottom: 18px; }
-  .cap .s { margin-top: 16px; font-size: 0.95rem; max-width: 20em; }
-  /* the sun has the upper part of the first screen; its card sits below it */
-  .cap[data-i="0"] { top: calc(50% + 17svh - 38px); }
-  @media (max-height: 700px) { .cap[data-i="0"] { top: calc(50% + 16svh - 24px); } .cap .s { font-size: 0.9rem; } }
 }
 
 /* the content after the film */
